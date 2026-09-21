@@ -1,0 +1,53 @@
+# Dependencies and build
+node_modules/
+dist/
+build/
+coverage/
+
+# Local runtime
+runtime/
+logs/
+diagnostics/
+tmp/
+temp/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.jsonl
+
+# Authentication and browser state
+auth/
+profiles/
+browser-state/
+storage-state/
+user-data/
+cookies/
+sessions-private/
+*.har
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+tokens/
+
+# Local config
+config/local.*
+config/private.*
+client-mappings.*
+
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Diagnostics archives
+diagnostics-*.zip
