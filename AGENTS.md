@@ -25,6 +25,7 @@ It exists because fixed persistent browsers do not scale cleanly to several conc
 13. **Use official browser-engine capabilities before adding custom browser logic.**
 14. **Tool risk metadata must reflect actual semantics; do not mark routine read-only or local-only actions as destructive without justification.**
 15. **Interactive browser status must make window visibility/state diagnosable.**
+16. **If the user already authorized end-to-end implementation, do not stop after writing a plan merely to ask for plan approval. Continue through implementation and QA unless a genuinely new consequential decision or irreducible human action is required.**
 
 ## V1 lessons are design inputs
 
@@ -63,7 +64,9 @@ Perform routine technical work directly whenever the environment and permissions
 
 Do not delegate terminal commands, configuration edits, file copies, API configuration, or routine OAuth clicking to the user merely because they are operational steps.
 
-Human interaction should be reduced to genuinely irreducible requirements such as a provider-enforced MFA, hardware key, or CAPTCHA that cannot be completed normally through the browser.
+Do not pause after creating an implementation plan just to ask whether to begin when the user has already authorized this end-to-end task. Treat the plan as an internal checkpoint and continue automatically.
+
+Human interaction should be reduced to genuinely irreducible requirements such as a provider-enforced MFA, hardware key, CAPTCHA that cannot be completed normally through the browser, or a genuinely new consequential decision that was not already authorized.
 
 After that single human step, continue automatically.
 
