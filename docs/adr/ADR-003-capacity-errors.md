@@ -1,6 +1,6 @@
 # ADR-003: Return Structured Capacity Errors
 
-- Status: Accepted
+- Status: Superseded by ADR-003-actionable-fifo-queue
 - Date: 2026-09-21
 
 ## Context
@@ -9,10 +9,10 @@ When all five initial session slots are occupied, V2 may either queue requests o
 
 ## Decision
 
-V2 returns `RESOURCE/CAPACITY_EXHAUSTED` immediately when capacity is full.
+This immediate-rejection design was replaced before release. V2 now offers an explicit bounded strict-FIFO wait path and retains immediate `RESOURCE/CAPACITY_EXHAUSTED` only when the caller opts out of waiting.
 
 The response includes active count, configured limit, and `queue_wait_ms: 0`. No session is stolen or reassigned.
 
 ## Consequences
 
-The initial implementation is deterministic and fail-closed. Callers may retry with their own bounded policy. A future queue requires a new ADR and must preserve ownership, cancellation, and telemetry invariants.
+See `ADR-003-actionable-fifo-queue.md` for the active decision, including cancellation, fairness, visible queue telemetry, and the prohibition on live lease theft.

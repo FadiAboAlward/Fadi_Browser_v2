@@ -22,8 +22,10 @@ function New-ProtectedSecret([string]$Name, [int]$Bytes) {
   $path = Join-Path $script:RuntimeRoot "config\$Name.dpapi"
   if (Test-Path -LiteralPath $path) { return }
   $buffer = New-Object byte[] $Bytes
-  [Security.Cryptography.RandomNumberGenerator]::Fill($buffer)
-  $value = [Convert]::ToHexString($buffer).ToLowerInvariant()
+  $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::Create()
+  $rng.GetBytes($buffer)
+  $rng.Dispose()
+  $value = [BitConverter]::ToString($buffer).Replace('-', '').ToLowerInvariant()
   $plain = [Text.Encoding]::UTF8.GetBytes($value)
   $protected = [Security.Cryptography.ProtectedData]::Protect($plain, $script:Entropy, [Security.Cryptography.DataProtectionScope]::CurrentUser)
   [IO.File]::WriteAllText($path, [Convert]::ToBase64String($protected), [Text.UTF8Encoding]::new($false))

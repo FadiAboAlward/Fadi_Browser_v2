@@ -4,6 +4,12 @@ All notable project changes should be documented here.
 
 ## Unreleased
 
+- Added strict bounded FIFO queue promotion, cancellation, timeout telemetry, and per-client fairness enforcement.
+- Bound routine MCP browser operations to stateful transport sessions and removed public routine lease/client arguments.
+- Added portable versus profile-bound auth enforcement with engine known-good restore validation.
+- Added safe browser window diagnostics/restore metadata and semantic MCP tool annotations.
+- Added blocking working-tree QA, MCP binding/fresh-task regressions, and the complete V1-derived named regression suite.
+
 ### Added
 
 - Initial public project documentation.

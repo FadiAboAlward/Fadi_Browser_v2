@@ -20,26 +20,29 @@ for (const concurrency of [1, 3, 5]) {
   let failures = 0;
   const freeBefore = os.freemem();
   try {
+    const clients = ['maintenance', 'maintenance', 'client-a', 'client-b', 'client-b'];
     await Promise.all(Array.from({ length: concurrency }, async (_, index) => {
       const start = performance.now();
+      const clientId = clients[index] || 'maintenance';
       try {
-        const lease = await api.acquire({ clientId: 'maintenance', taskLabel: `benchmark-${concurrency}-${index + 1}` });
+        const lease = await api.acquire({ clientId, taskLabel: `benchmark-${concurrency}-${index + 1}` });
+        lease.client_id = clientId;
         create.push(performance.now() - start);
         leases.push(lease);
       } catch (error) { failures += 1; throw error; }
     }));
     await Promise.all(leases.map(async (lease, index) => {
       let start = performance.now();
-      await api.navigate({ clientId: 'maintenance', leaseToken: lease.lease_token, url: `https://example.com/#benchmark-${concurrency}-${index + 1}` });
+      await api.navigate({ clientId: lease.client_id, leaseToken: lease.lease_token, url: `https://example.com/#benchmark-${concurrency}-${index + 1}` });
       navigate.push(performance.now() - start);
       start = performance.now();
-      await api.snapshot({ clientId: 'maintenance', leaseToken: lease.lease_token, interactive: false, compact: true, depth: 3 });
+      await api.snapshot({ clientId: lease.client_id, leaseToken: lease.lease_token, interactive: false, compact: true, depth: 3 });
       snapshot.push(performance.now() - start);
     }));
   } catch { failures += 1; }
   await Promise.all(leases.map(async lease => {
     const start = performance.now();
-    try { await api.release({ clientId: 'maintenance', leaseToken: lease.lease_token }); }
+    try { await api.release({ clientId: lease.client_id, leaseToken: lease.lease_token }); }
     catch { failures += 1; }
     cleanup.push(performance.now() - start);
   }));

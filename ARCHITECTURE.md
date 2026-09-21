@@ -195,7 +195,11 @@ The 0.1.0 implementation uses a Node 24 broker bound to `127.0.0.1:8951`. It exp
 
 The broker invokes the repository-pinned `agent-browser` 0.38.1 CLI. Each lease receives a unique `--session` under the dedicated `fadi-browser-v2` namespace with strict tab pinning. No V1 port, process, profile, tunnel, task, or state directory is reused.
 
-Lease tokens are random 256-bit credentials. Only their SHA-256 hashes are stored. A restart marks active leases recoverable for a bounded window; recovery requires the original token and matching client.
+The HTTP operational API uses random 256-bit lease credentials whose SHA-256 hashes alone are stored. The public MCP surface binds that credential inside a stateful MCP transport session: routine tools expose neither `lease_token` nor `client_id`. Acquisition returns a separately named recovery-only credential for the explicit restart path. A fresh MCP task receives a distinct transport session and no inherited ownership.
+
+Capacity uses a bounded strict-FIFO queue. A caller opts into a bounded wait on `browser_acquire`; MCP cancellation aborts the queued wait, and no later entry bypasses an ineligible head. Per-client caps and profile-bound serialization are enforced before promotion.
+
+Portable auth uses the pinned engine's `restore-save=auto` known-good behavior with optional URL/text/function validation. Profile-bound auth requires a dedicated path under the V2 runtime auth directory and is serialized; it is never silently downgraded to cookie-only restore.
 
 ## Failure philosophy
 

@@ -49,7 +49,9 @@ It must avoid unsafe simultaneous ownership of one live profile directory.
 
 ### Implemented 0.1.0 policy
 
-Persistent auth profiles map to encrypted agent-browser restore keys in the dedicated V2 namespace. Every task still receives a unique isolated session. The first active lease for a profile is its persistence writer; any simultaneous lease for the same profile loads the baseline with saving disabled. This prevents concurrent state-file writes and avoids sharing a live `user-data-dir`.
+Portable persistent auth profiles map to encrypted agent-browser restore keys in the dedicated V2 namespace. Every task still receives a unique isolated session. The first active lease for a profile is its persistence writer with `restore-save=auto`; optional URL/text/function checks validate the restored identity, and a failed restore never overwrites the known-good state. Any simultaneous lease loads the baseline with saving disabled.
+
+Profile-bound identities require an explicit dedicated profile path under `%LOCALAPPDATA%\FadiBrowserV2\auth`. V2 serializes that identity, never mounts it writable in concurrent processes, and never silently downgrades it to portable cookie restore.
 
 The encryption key is local-only and DPAPI-protected. Public sessions do not load or save auth state.
 

@@ -4,6 +4,9 @@
   "host": "127.0.0.1",
   "port": 8951,
   "maxConcurrentSessions": 5,
+  "queueMaxDepth": 10,
+  "queueWaitTimeoutMs": 30000,
+  "maxSessionsPerClient": 3,
   "leaseTtlMs": 300000,
   "recoveryWindowMs": 120000,
   "retentionDays": 30,
@@ -23,13 +26,16 @@
   },
   "authProfiles": {
     "public": {
-      "persistent": false
+      "persistent": false,
+      "mode": "portable"
     },
     "auth-profile-a": {
-      "persistent": true
+      "persistent": true,
+      "mode": "portable"
     },
     "auth-profile-b": {
-      "persistent": true
+      "persistent": true,
+      "mode": "portable"
     }
   }
 }

@@ -13,8 +13,10 @@ Use agent-browser encrypted restore state, not shared live Chrome profiles.
 
 - Every lease receives a unique isolated agent-browser session.
 - Persistent identities use a stable restore key inside the V2 namespace.
-- The first active lease for an auth profile is the persistence writer.
+- The first active lease for a portable auth profile is the persistence writer and uses the engine's `restore-save=auto` known-good policy.
 - Additional simultaneous leases for that identity load the same baseline with `restore-save: never`.
+- Optional URL, text, or function validation is passed to the engine; failed restore/validation cannot overwrite the previous known-good state.
+- Profile-bound identities use a dedicated V2-owned browser profile path and are serialized instead of using portable restore state.
 - Public/non-authenticated sessions do not use restore state.
 - The encryption key is generated locally, protected with Windows DPAPI CurrentUser, and injected only into the broker process environment.
 

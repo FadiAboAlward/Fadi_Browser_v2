@@ -24,7 +24,7 @@ Expected outputs:
 - queue position when queued;
 - capability summary where useful.
 
-The response may include a non-secret lease reference for diagnostics, but normal browser actions should not require it as a credential.
+The response includes a non-secret lease reference for diagnostics and may include a separately named `recovery_credential`. The recovery credential is used only by `browser_recover`; normal browser actions never accept it.
 
 ### browser_status
 
@@ -90,13 +90,17 @@ Implemented browser tools also include:
 - `browser_evaluate`;
 - `browser_command` for an explicit allowlist of common agent-browser interactions.
 
-All require both `client_id` and `lease_token`.
+After `browser_acquire`, all routine browser tools resolve ownership from the stateful MCP transport session. Their public schemas contain neither `client_id` nor `lease_token`.
+
+The local HTTP operational API still uses `client_id` plus a lease credential because it is an administrative/script surface rather than the public model-facing MCP contract.
 
 ## Browser operations
 
 Examples include navigate, snapshot, click, type, tabs, wait, evaluate where allowed, file upload, and window restore/foreground where supported.
 
-Every operation after acquisition must resolve to the exact internally owned session, preferably without a public credential-like lease argument.
+Every operation after acquisition resolves to the exact internally owned session without a public credential-like lease argument.
+
+MCP request cancellation aborts a queued acquire and records `queue_cancelled`. The HTTP operational surface also exposes an owner-validated queue cancellation route for script clients.
 
 ## Public handle fallback
 

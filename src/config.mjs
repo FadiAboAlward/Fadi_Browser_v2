@@ -34,13 +34,35 @@ export function loadConfig(options = {}) {
     host: raw.host || '127.0.0.1',
     port: Number(raw.port || 8951),
     maxConcurrentSessions: Number(raw.maxConcurrentSessions || 5),
+    queueMaxDepth: Number(raw.queueMaxDepth || 10),
+    queueWaitTimeoutMs: Number(raw.queueWaitTimeoutMs || 30000),
+    maxSessionsPerClient: Number(raw.maxSessionsPerClient || 3),
     leaseTtlMs: Number(raw.leaseTtlMs || 300000),
     recoveryWindowMs: Number(raw.recoveryWindowMs || 120000),
     retentionDays: Number(raw.retentionDays || 30),
+    headed: raw.headed === true,
     namespace: raw.namespace || 'fadi-browser-v2',
     clients: raw.clients || {},
     authProfiles: raw.authProfiles || {}
   };
+
+  for (const [id, profile] of Object.entries(config.authProfiles)) {
+    profile.mode = profile.mode || 'portable';
+    if (!['portable', 'profile_bound'].includes(profile.mode)) {
+      throw new BrokerError('CONFIG', 'INVALID_AUTH_MODE', `Auth profile ${id} has an invalid mode.`, undefined, 500);
+    }
+    if (profile.mode === 'profile_bound') {
+      if (!profile.profilePath) {
+        throw new BrokerError('CONFIG', 'PROFILE_PATH_REQUIRED', `Profile-bound auth profile ${id} requires profilePath.`, undefined, 500);
+      }
+      const resolvedProfilePath = path.resolve(expandWindowsEnv(profile.profilePath));
+      const ownedAuthRoot = path.resolve(resolvedRoot, 'auth');
+      if (!resolvedProfilePath.startsWith(`${ownedAuthRoot}${path.sep}`)) {
+        throw new BrokerError('CONFIG', 'PROFILE_PATH_OUTSIDE_V2', `Profile-bound auth profile ${id} must use a path under the V2 runtime auth directory.`, undefined, 500);
+      }
+      profile.profilePath = resolvedProfilePath;
+    }
+  }
 
   if (config.host !== '127.0.0.1' && config.host !== 'localhost' && config.host !== '::1') {
     throw new BrokerError('CONFIG', 'NON_LOOPBACK_BIND_DENIED', 'V2 must bind to loopback unless a separately reviewed remote deployment is configured.', { host: config.host }, 500);

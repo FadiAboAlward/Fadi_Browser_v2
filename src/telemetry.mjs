@@ -31,6 +31,12 @@ export class Telemetry {
         error_code TEXT,
         concurrency_count INTEGER,
         queue_wait_ms REAL,
+        queue_position INTEGER,
+        queue_length INTEGER,
+        wait_timeout_ms INTEGER,
+        window_state TEXT,
+        window_visible INTEGER,
+        browser_process_id INTEGER,
         origin TEXT,
         cpu_user_us INTEGER,
         cpu_system_us INTEGER,
@@ -55,15 +61,28 @@ export class Telemetry {
       );
       CREATE INDEX IF NOT EXISTS idx_leases_status ON leases(status);
     `);
+    this.#ensureEventColumns();
     this.insertEvent = this.db.prepare(`
       INSERT INTO events (
         timestamp, broker_version, engine_version, event_type, client_ref,
         auth_profile_ref, lease_ref, session_ref, operation, duration_ms,
         success, error_category, error_code, concurrency_count, queue_wait_ms,
-        origin, cpu_user_us, cpu_system_us, memory_rss_bytes, metadata_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        queue_position, queue_length, wait_timeout_ms, window_state, window_visible,
+        browser_process_id, origin, cpu_user_us, cpu_system_us, memory_rss_bytes, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     this.cleanupRetention();
+  }
+
+  #ensureEventColumns() {
+    const existing = new Set(this.db.prepare('PRAGMA table_info(events)').all().map(row => row.name));
+    const columns = {
+      queue_position: 'INTEGER', queue_length: 'INTEGER', wait_timeout_ms: 'INTEGER',
+      window_state: 'TEXT', window_visible: 'INTEGER', browser_process_id: 'INTEGER'
+    };
+    for (const [name, type] of Object.entries(columns)) {
+      if (!existing.has(name)) this.db.exec(`ALTER TABLE events ADD COLUMN ${name} ${type}`);
+    }
   }
 
   rotateIfNeeded() {
@@ -102,6 +121,12 @@ export class Telemetry {
       error_code: data.errorCode || null,
       concurrency_count: Number.isFinite(data.concurrencyCount) ? data.concurrencyCount : null,
       queue_wait_ms: Number.isFinite(data.queueWaitMs) ? data.queueWaitMs : null,
+      queue_position: Number.isFinite(data.queuePosition) ? data.queuePosition : null,
+      queue_length: Number.isFinite(data.queueLength) ? data.queueLength : null,
+      wait_timeout_ms: Number.isFinite(data.waitTimeoutMs) ? data.waitTimeoutMs : null,
+      window_state: data.windowState || null,
+      window_visible: data.windowVisible === undefined ? null : Boolean(data.windowVisible),
+      browser_process_id: Number.isFinite(data.browserProcessId) ? data.browserProcessId : null,
       origin: sanitizeOrigin(data.url || data.origin),
       cpu_user_us: cpu.user,
       cpu_system_us: cpu.system,
@@ -113,6 +138,8 @@ export class Telemetry {
       record.client_ref, record.auth_profile_ref, record.lease_ref, record.session_ref,
       record.operation, record.duration_ms, record.success === null ? null : Number(record.success),
       record.error_category, record.error_code, record.concurrency_count, record.queue_wait_ms,
+      record.queue_position, record.queue_length, record.wait_timeout_ms, record.window_state,
+      record.window_visible === null ? null : Number(record.window_visible), record.browser_process_id,
       record.origin, record.cpu_user_us, record.cpu_system_us, record.memory_rss_bytes,
       JSON.stringify(record.metadata)
     );

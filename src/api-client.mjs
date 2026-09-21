@@ -16,6 +16,8 @@ export class BrokerApiClient {
   getTitle(input) { return this.#post('/v1/get-title', mapInput(input)); }
   evaluate(input) { return this.#post('/v1/evaluate', mapInput(input)); }
   command(input) { return this.#post('/v1/command', mapInput(input)); }
+  restoreWindow(input) { return this.#post('/v1/restore-window', mapInput(input)); }
+  cancelQueue(input) { return this.#post('/v1/queue/cancel', mapInput(input)); }
 
   async #post(route, payload) {
     const response = await fetch(`${this.baseUrl}${route}`, {
@@ -40,7 +42,9 @@ function mapInput(input) {
     ['clientId', 'client_id'],
     ['leaseToken', 'lease_token'],
     ['authProfileId', 'auth_profile_id'],
-    ['taskLabel', 'task_label']
+    ['taskLabel', 'task_label'],
+    ['waitTimeoutMs', 'wait_timeout_ms'],
+    ['queueId', 'queue_id']
   ];
   for (const [camel, snake] of pairs) {
     if (camel in mapped) {

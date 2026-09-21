@@ -118,6 +118,9 @@ Initial target: **5 concurrent isolated sessions**.
 - Exact engine pin: `agent-browser` 0.38.1.
 - Streamable HTTP MCP: `http://127.0.0.1:8951/mcp`.
 - Local stdio MCP wrapper: `scripts/mcp-stdio.ps1`.
+- Stateful MCP transport sessions keep lease ownership server-side; routine browser tool schemas do not expose `lease_token` or `client_id`.
+- Strict bounded FIFO queue with cancellation, timeout, visible telemetry, and configurable per-client caps.
+- Portable identities use known-good restore validation; profile-bound identities require a dedicated V2-owned profile path and serialize access.
 - Runtime root: `%LOCALAPPDATA%\FadiBrowserV2`.
 - SQLite: `%LOCALAPPDATA%\FadiBrowserV2\data\telemetry.sqlite`.
 - JSONL: `%LOCALAPPDATA%\FadiBrowserV2\logs\events.jsonl`.

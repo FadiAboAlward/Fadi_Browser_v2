@@ -1,6 +1,7 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { BrokerError, asBrokerError } from './errors.mjs';
 import { newOpaqueToken, nowIso, safeRef, sanitizeOrigin, sha256 } from './util.mjs';
+import { LeaseQueue } from './queue.mjs';
 
 const CAPACITY_STATUSES = new Set(['ALLOCATING', 'ACTIVE', 'RECOVERABLE', 'RELEASING']);
 
@@ -12,6 +13,8 @@ export class LeaseBroker {
     this.versions = versions;
     this.leases = new Map();
     this.tokenIndex = new Map();
+    this.queuePumping = false;
+    this.queue = new LeaseQueue(config, telemetry, { onChange: () => void this.#pumpQueue() });
     this.startedAt = nowIso();
     this.recentCrash = Boolean(versions.recentCrash);
     this.resourcePressure = false;
@@ -36,6 +39,7 @@ export class LeaseBroker {
         inFlight: 0,
         recoveryDeadline: deadline,
         persistenceWriter: Boolean(row.persistence_writer),
+        browserDiagnostics: null,
         releasedAt: null
       };
       this.leases.set(lease.leaseId, lease);
@@ -48,32 +52,73 @@ export class LeaseBroker {
     return [...this.leases.values()].filter(lease => CAPACITY_STATUSES.has(lease.status)).length;
   }
 
-  async acquire({ clientId, authProfileId, taskLabel }) {
+  async acquire({ clientId, authProfileId, taskLabel, waitTimeoutMs, signal, _queueWaitMs = 0, _fromQueue = false }) {
     const started = performance.now();
     const resolvedProfile = this.#resolvePolicy(clientId, authProfileId);
-    this.telemetry.event('session_requested', {
-      clientId,
-      authProfileId: resolvedProfile,
-      concurrencyCount: this.activeCount(),
-      queueWaitMs: 0,
-      metadata: { task_label: taskLabel ? String(taskLabel).slice(0, 80) : null }
-    });
-    if (this.activeCount() >= this.config.maxConcurrentSessions) {
+    if (_queueWaitMs === 0) {
+      this.telemetry.event('session_requested', {
+        clientId,
+        authProfileId: resolvedProfile,
+        concurrencyCount: this.activeCount(),
+        queueWaitMs: 0,
+        metadata: { task_label: taskLabel ? String(taskLabel).slice(0, 80) : null }
+      });
+    }
+
+    const clientActive = this.#clientActiveCount(clientId);
+    const maxClient = this.config.maxSessionsPerClient ?? 3;
+    const profileBusy = this.#isProfileBusy(resolvedProfile);
+    const blocked = this.activeCount() >= this.config.maxConcurrentSessions
+      || clientActive >= maxClient
+      || profileBusy;
+
+    if (blocked) {
+      if (_fromQueue) {
+        throw new BrokerError('BROKER', 'QUEUE_PROMOTION_RACE', 'A queued request could not claim its reserved capacity.', undefined, 503);
+      }
+      // Only queue when caller explicitly opts in with waitTimeoutMs > 0
+      if (waitTimeoutMs > 0) {
+        try {
+          const queued = this.queue.enqueue({ clientId, authProfileId: resolvedProfile, taskLabel, waitTimeoutMs, signal });
+          return await queued.promise;
+        } catch (error) {
+          this.telemetry.event('tool_failed', {
+            clientId,
+            authProfileId: resolvedProfile,
+            operation: 'browser_acquire',
+            success: false,
+            errorCategory: error.category || 'RESOURCE',
+            errorCode: error.code || 'QUEUE_FAILED',
+            concurrencyCount: this.activeCount(),
+            queueWaitMs: _queueWaitMs + Math.round(performance.now() - started)
+          });
+          throw error;
+        }
+      }
+      // Immediate rejection with the most specific error
+      const rejectCode = profileBusy ? 'AUTH_PROFILE_BUSY'
+        : clientActive >= maxClient ? 'PER_CLIENT_LIMIT'
+        : 'CAPACITY_EXHAUSTED';
+      const rejectMsg = profileBusy ? 'The requested profile is bound and currently in use.'
+        : clientActive >= maxClient ? `Client already has ${clientActive} active sessions (limit: ${maxClient}).`
+        : 'All configured V2 session slots are in use.';
       this.telemetry.event('tool_failed', {
         clientId,
         authProfileId: resolvedProfile,
         operation: 'browser_acquire',
         success: false,
         errorCategory: 'RESOURCE',
-        errorCode: 'CAPACITY_EXHAUSTED',
+        errorCode: rejectCode,
         concurrencyCount: this.activeCount(),
-        queueWaitMs: 0
+        queueWaitMs: _queueWaitMs
       });
-      throw new BrokerError('RESOURCE', 'CAPACITY_EXHAUSTED', 'All configured V2 session slots are in use.', {
+      throw new BrokerError('RESOURCE', rejectCode, rejectMsg, {
         active: this.activeCount(),
         limit: this.config.maxConcurrentSessions,
-        queue_wait_ms: 0
-      }, 429);
+        client_active: clientActive,
+        client_limit: maxClient,
+        queue_wait_ms: _queueWaitMs
+      }, profileBusy ? 409 : 429);
     }
 
     const leaseToken = newOpaqueToken();
@@ -89,6 +134,7 @@ export class LeaseBroker {
       inFlight: 0,
       recoveryDeadline: null,
       persistenceWriter: this.#isPersistenceWriter(resolvedProfile),
+      browserDiagnostics: null,
       releasedAt: null
     };
     this.leases.set(lease.leaseId, lease);
@@ -103,10 +149,16 @@ export class LeaseBroker {
           metadata: { persistence_writer: lease.persistenceWriter }
         }));
       }
-      await this.engine.createSession(lease.sessionId, resolvedProfile, {
+      const created = await this.engine.createSession(lease.sessionId, resolvedProfile, {
         persistent: Boolean(profile?.persistent),
-        persistenceWriter: lease.persistenceWriter
+        persistenceWriter: lease.persistenceWriter,
+        mode: profile?.mode || 'portable',
+        profilePath: profile?.profilePath,
+        validation: profile?.validation,
+        startUrl: profile?.validation?.startUrl,
+        headed: Boolean(this.config.headed)
       });
+      lease.browserDiagnostics = created?.diagnostics || null;
       if (profile?.persistent) {
         this.telemetry.event('auth_restore_success', this.#eventContext(lease, {
           operation: 'auth_restore',
@@ -122,8 +174,18 @@ export class LeaseBroker {
         durationMs,
         success: true,
         concurrencyCount: this.activeCount(),
-        queueWaitMs: 0,
+        queueWaitMs: _queueWaitMs,
+        windowState: lease.browserDiagnostics?.window_state,
+        windowVisible: lease.browserDiagnostics?.visible,
+        browserProcessId: lease.browserDiagnostics?.process_id,
         metadata: { persistence_writer: lease.persistenceWriter }
+      }));
+      this.telemetry.event('window_state_observed', this.#eventContext(lease, {
+        success: true,
+        windowState: lease.browserDiagnostics?.window_state,
+        windowVisible: lease.browserDiagnostics?.visible,
+        browserProcessId: lease.browserDiagnostics?.process_id,
+        metadata: { safe_window_id: lease.browserDiagnostics?.safe_window_id || null }
       }));
       return {
         lease_id: lease.leaseId,
@@ -134,7 +196,7 @@ export class LeaseBroker {
         created_at: lease.createdAt,
         last_activity: lease.lastActivity,
         status: lease.status,
-        queue_wait_ms: 0
+        queue_wait_ms: _queueWaitMs
       };
     } catch (error) {
       lease.status = 'CLOSED';
@@ -170,6 +232,9 @@ export class LeaseBroker {
     const authProfiles = Object.fromEntries(Object.entries(this.config.authProfiles).map(([id, profile]) => [id, {
       configured: true,
       persistent: Boolean(profile.persistent),
+      auth_mode: profile.mode || 'portable',
+      concurrent_allowed: profile.mode !== 'profile_bound',
+      known_good_policy: profile.mode === 'portable' && profile.persistent ? 'engine_auto_validation' : null,
       active_sessions: [...this.leases.values()].filter(lease => lease.authProfileId === id && CAPACITY_STATUSES.has(lease.status)).length
     }]));
     return {
@@ -177,7 +242,7 @@ export class LeaseBroker {
       mcp: 'HEALTHY',
       browser_engine: 'HEALTHY',
       sessions_active: this.activeCount(),
-      sessions_queued: 0,
+      sessions_queued: this.queue.length,
       concurrency_limit: this.config.maxConcurrentSessions,
       auth_profiles: authProfiles,
       recent_crash: this.recentCrash,
@@ -188,6 +253,16 @@ export class LeaseBroker {
       source_dirty: Boolean(this.versions.sourceDirty),
       started_at: this.startedAt
     };
+  }
+
+  cancelQueue({ clientId, queueId }) {
+    const entry = this.queue.entries.find(item => item.id === queueId);
+    if (!entry) throw new BrokerError('RESOURCE', 'QUEUE_ENTRY_NOT_FOUND', 'The queue entry is no longer active.', undefined, 404);
+    if (entry.clientId !== clientId) {
+      throw new BrokerError('POLICY', 'QUEUE_OWNER_MISMATCH', 'The queue entry belongs to a different client.', undefined, 403);
+    }
+    this.queue.cancel(queueId);
+    return { acquisition_state: 'CANCELLED', queue_id: queueId };
   }
 
   async recover({ clientId, leaseToken }) {
@@ -203,10 +278,16 @@ export class LeaseBroker {
       await this.engine.sessionInfo(lease.sessionId);
     } catch {
       const profile = this.config.authProfiles[lease.authProfileId];
-      await this.engine.createSession(lease.sessionId, lease.authProfileId, {
+      const created = await this.engine.createSession(lease.sessionId, lease.authProfileId, {
         persistent: Boolean(profile?.persistent),
-        persistenceWriter: lease.persistenceWriter
+        persistenceWriter: lease.persistenceWriter,
+        mode: profile?.mode || 'portable',
+        profilePath: profile?.profilePath,
+        validation: profile?.validation,
+        startUrl: profile?.validation?.startUrl,
+        headed: Boolean(this.config.headed)
       });
+      lease.browserDiagnostics = created?.diagnostics || null;
       this.telemetry.event('session_restored', this.#eventContext(lease, { success: true }));
     }
     lease.status = 'ACTIVE';
@@ -250,6 +331,7 @@ export class LeaseBroker {
       concurrencyCount: this.activeCount(),
       metadata: { reason }
     }));
+    void this.#pumpQueue();
     return this.#publicLease(lease);
   }
 
@@ -288,8 +370,24 @@ export class LeaseBroker {
     return this.#withLease(clientId, leaseToken, command, lease => this.engine.run(lease.sessionId, [command, ...args]));
   }
 
+  async restoreWindow({ clientId, leaseToken }) {
+    return this.#withLease(clientId, leaseToken, 'restore_window', async lease => {
+      const diagnostics = await this.engine.restoreWindow(lease.sessionId);
+      lease.browserDiagnostics = diagnostics;
+      this.telemetry.event('window_restored', this.#eventContext(lease, {
+        success: true,
+        windowState: diagnostics.window_state,
+        windowVisible: diagnostics.visible,
+        browserProcessId: diagnostics.process_id,
+        metadata: { safe_window_id: diagnostics.safe_window_id }
+      }));
+      return diagnostics;
+    });
+  }
+
   async reapStale() {
     const now = Date.now();
+    let reaped = false;
     for (const lease of [...this.leases.values()]) {
       if (lease.inFlight > 0 || !CAPACITY_STATUSES.has(lease.status)) continue;
       const activeExpired = lease.status === 'ACTIVE' && now - Date.parse(lease.lastActivity) > this.config.leaseTtlMs;
@@ -302,11 +400,14 @@ export class LeaseBroker {
       this.tokenIndex.delete(lease.tokenHash);
       this.telemetry.upsertLease(lease);
       this.telemetry.event('session_reaped', this.#eventContext(lease, { success: true, concurrencyCount: this.activeCount() }));
+      reaped = true;
     }
+    if (reaped) void this.#pumpQueue();
   }
 
   async shutdown({ preserveRecoverable = false } = {}) {
     clearInterval(this.sweeper);
+    this.queue.drain();
     if (preserveRecoverable) {
       const deadline = new Date(Date.now() + this.config.recoveryWindowMs).toISOString();
       for (const lease of this.leases.values()) {
@@ -392,6 +493,54 @@ export class LeaseBroker {
     return profile;
   }
 
+  async #pumpQueue() {
+    if (this.queuePumping) return;
+    this.queuePumping = true;
+    try {
+      while (this.queue.length > 0 && this.activeCount() < this.config.maxConcurrentSessions) {
+        const entry = this.queue.takeHead(head => {
+          const clientActive = this.#clientActiveCount(head.clientId);
+          const maxClient = this.config.maxSessionsPerClient ?? 3;
+          return clientActive < maxClient && !this.#isProfileBusy(head.authProfileId);
+        });
+        // Strict FIFO: an ineligible head is never bypassed by a later request.
+        if (!entry) break;
+        const queueWaitMs = Date.now() - entry.enqueuedAt;
+        try {
+          const lease = await this.acquire({
+            clientId: entry.clientId,
+            authProfileId: entry.authProfileId,
+            taskLabel: entry.taskLabel,
+            waitTimeoutMs: 0,
+            _queueWaitMs: queueWaitMs,
+            _fromQueue: true
+          });
+          this.queue.resolve(entry, {
+            ...lease,
+            acquisition_state: 'ACQUIRED',
+            queue_id: entry.id,
+            queue_position: entry.initialPosition,
+            wait_timeout_ms: entry.waitTimeoutMs
+          });
+        } catch (error) {
+          entry.reject(error);
+        }
+      }
+    } finally {
+      this.queuePumping = false;
+    }
+  }
+
+  #clientActiveCount(clientId) {
+    return [...this.leases.values()].filter(lease => lease.clientId === clientId && CAPACITY_STATUSES.has(lease.status)).length;
+  }
+
+  #isProfileBusy(authProfileId) {
+    const profile = this.config.authProfiles[authProfileId];
+    if (profile?.mode !== 'profile_bound') return false;
+    return [...this.leases.values()].some(lease => lease.authProfileId === authProfileId && CAPACITY_STATUSES.has(lease.status));
+  }
+
   #isPersistenceWriter(authProfileId) {
     if (!this.config.authProfiles[authProfileId]?.persistent) return false;
     return ![...this.leases.values()].some(lease => lease.authProfileId === authProfileId && CAPACITY_STATUSES.has(lease.status));
@@ -440,7 +589,8 @@ export class LeaseBroker {
       status: lease.status,
       in_flight_operations: lease.inFlight,
       recovery_deadline: lease.recoveryDeadline,
-      persistence_writer: lease.persistenceWriter
+      persistence_writer: lease.persistenceWriter,
+      browser: lease.browserDiagnostics
     };
   }
 }

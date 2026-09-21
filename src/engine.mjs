@@ -25,11 +25,30 @@ export class AgentBrowserEngine {
 
   async createSession(sessionId, authProfileId, options = {}) {
     const flags = ['--pin-tab'];
-    if (options.persistent) {
+    if (options.mode === 'profile_bound') {
+      if (!options.profilePath) {
+        throw new BrokerError('AUTH', 'PROFILE_PATH_REQUIRED', 'A profile-bound identity requires a dedicated V2 profile path.', undefined, 500);
+      }
+      flags.push('--profile', options.profilePath);
+    } else if (options.persistent) {
       flags.push('--restore', `auth-${authProfileId}`);
-      flags.push('--restore-save', options.persistenceWriter ? 'always' : 'never');
+      // The engine's auto policy preserves the previous known-good state when
+      // restore or validation fails. Concurrent readers never write state.
+      flags.push('--restore-save', options.persistenceWriter ? 'auto' : 'never');
+      if (options.validation?.url) flags.push('--restore-check-url', options.validation.url);
+      if (options.validation?.text) flags.push('--restore-check-text', options.validation.text);
+      if (options.validation?.fn) flags.push('--restore-check-fn', options.validation.fn);
     }
-    return this.run(sessionId, ['open', 'about:blank'], { flags, timeoutMs: 90000 });
+    const opened = await this.run(sessionId, ['open', options.startUrl || 'about:blank'], { flags, timeoutMs: 90000 });
+    const diagnostics = await this.windowDiagnostics(sessionId).catch(() => ({
+      executable: 'chromium',
+      process_id: null,
+      window_state: options.headed ? 'UNKNOWN' : 'HIDDEN',
+      visible: Boolean(options.headed),
+      safe_window_id: null,
+      active_title: null
+    }));
+    return { ...opened, diagnostics };
   }
 
   async navigate(sessionId, url) {
@@ -67,6 +86,40 @@ export class AgentBrowserEngine {
 
   async sessionInfo(sessionId) {
     return this.run(sessionId, ['session', 'info']);
+  }
+
+  async windowDiagnostics(sessionId) {
+    const info = await this.sessionInfo(sessionId);
+    const data = info?.output?.data || info?.output || {};
+    const runtime = data.runtime && typeof data.runtime === 'object' ? data.runtime : {};
+    const processId = Number(data.pid || runtime.pid) || null;
+    const configuredHeaded = this.config.headed ?? process.env.AGENT_BROWSER_HEADED;
+    const headed = configuredHeaded === true || configuredHeaded === '1' || configuredHeaded === 'true';
+    return {
+      executable: path.basename(String(runtime.executablePath || runtime.executable || 'chromium')),
+      process_id: processId,
+      window_state: headed ? 'UNKNOWN' : 'HIDDEN',
+      visible: headed,
+      safe_window_id: processId ? `pid-${processId}` : null,
+      active_title: null
+    };
+  }
+
+  async restoreWindow(sessionId) {
+    const diagnostics = await this.windowDiagnostics(sessionId);
+    if (process.platform !== 'win32' || !diagnostics.process_id) {
+      throw new BrokerError('SESSION', 'WINDOW_NOT_INTERACTIVE', 'No interactive browser window is available for this session.', undefined, 409);
+    }
+    const script = `$root=${diagnostics.process_id};$ids=@($root);do{$before=$ids.Count;$children=Get-CimInstance Win32_Process|Where-Object{$ids -contains $_.ParentProcessId}|Select-Object -ExpandProperty ProcessId;$ids+=@($children)|Where-Object{$_ -notin $ids}}while($ids.Count -gt $before);$p=Get-Process -Id $ids -ErrorAction SilentlyContinue|Where-Object{$_.MainWindowHandle -ne 0}|Select-Object -First 1;if(-not $p){exit 3};Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public static class W{[DllImport("user32.dll")]public static extern bool ShowWindowAsync(IntPtr h,int n);[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);}';[W]::ShowWindowAsync($p.MainWindowHandle,9)|Out-Null;[W]::SetForegroundWindow($p.MainWindowHandle)|Out-Null;[Console]::Write($p.Id)`;
+    const browserPid = Number(await runPowerShell(script));
+    if (!browserPid) throw new BrokerError('SESSION', 'WINDOW_NOT_INTERACTIVE', 'No interactive browser window is available for this session.', undefined, 409);
+    return {
+      ...diagnostics,
+      process_id: browserPid,
+      window_state: 'NORMAL',
+      visible: true,
+      safe_window_id: `pid-${browserPid}`
+    };
   }
 
   async run(sessionId, args, options = {}) {
@@ -119,6 +172,17 @@ export class AgentBrowserEngine {
       else child.stdin.end();
     });
   }
+}
+
+function runPowerShell(script) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.on('error', reject);
+    child.on('exit', code => code === 0 ? resolve(stdout.trim()) : reject(new BrokerError('SESSION', 'WINDOW_NOT_INTERACTIVE', 'No interactive browser window is available for this session.', undefined, 409)));
+  });
 }
 
 function parseEngineOutput(stdout) {

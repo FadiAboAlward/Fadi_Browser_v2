@@ -1,9 +1,8 @@
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { createMcpHandler } from '@modelcontextprotocol/server';
-import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from '@modelcontextprotocol/node';
+import { localhostHostValidation, localhostOriginValidation, NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import { loadConfig } from './config.mjs';
 import { AgentBrowserEngine } from './engine.mjs';
 import { LeaseBroker } from './broker.mjs';
@@ -31,10 +30,7 @@ if (!process.env.AGENT_BROWSER_ENCRYPTION_KEY || !/^[a-fA-F0-9]{64}$/.test(proce
 const telemetry = new Telemetry(config, versions);
 const engine = new AgentBrowserEngine(config);
 const broker = new LeaseBroker(config, telemetry, engine, versions);
-const mcpHandler = createMcpHandler(() => createBrokerMcpServer(broker, versions.brokerVersion));
-const nodeMcpHandler = toNodeHandler(mcpHandler, {
-  onerror: error => telemetry.event('tool_failed', { operation: 'mcp_transport', success: false, errorCategory: 'MCP_TRANSPORT', errorCode: 'MCP_ADAPTER_ERROR', metadata: { message: error.message } })
-});
+const mcpSessions = new Map();
 const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();
 
@@ -48,7 +44,7 @@ const httpServer = createServer(async (req, res) => {
     }
     if (url.pathname === '/mcp') {
       requireAuthorization(req);
-      await nodeMcpHandler(req, res);
+      await handleMcpRequest(req, res);
       return;
     }
     if (req.method !== 'POST') return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'NOT_FOUND', message: 'Route not found.' } });
@@ -64,16 +60,18 @@ const httpServer = createServer(async (req, res) => {
 
 async function routeApi(route, body) {
   switch (route) {
-    case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, taskLabel: body.task_label });
+    case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, taskLabel: body.task_label, waitTimeoutMs: body.wait_timeout_ms });
     case '/v1/status': return broker.status({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/recover': return broker.recover({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/release': return broker.release({ clientId: body.client_id, leaseToken: body.lease_token });
+    case '/v1/queue/cancel': return broker.cancelQueue({ clientId: body.client_id, queueId: body.queue_id });
     case '/v1/navigate': return broker.navigate({ clientId: body.client_id, leaseToken: body.lease_token, url: body.url });
     case '/v1/snapshot': return broker.snapshot({ clientId: body.client_id, leaseToken: body.lease_token, interactive: body.interactive, compact: body.compact, depth: body.depth });
     case '/v1/get-url': return broker.getUrl({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/get-title': return broker.getTitle({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/evaluate': return broker.evaluate({ clientId: body.client_id, leaseToken: body.lease_token, script: body.script });
     case '/v1/command': return broker.command({ clientId: body.client_id, leaseToken: body.lease_token, command: body.command, args: body.args || [] });
+    case '/v1/restore-window': return broker.restoreWindow({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/admin/reap': await broker.reapStale(); return broker.status();
     case '/v1/admin/shutdown': {
       if (shuttingDown) return { status: 'SHUTTING_DOWN' };
@@ -84,6 +82,31 @@ async function routeApi(route, body) {
     }
     default: throw new BrokerError('MCP_TRANSPORT', 'NOT_FOUND', 'Route not found.', undefined, 404);
   }
+}
+
+async function handleMcpRequest(req, res) {
+  const requestedSessionId = String(req.headers['mcp-session-id'] || '');
+  if (requestedSessionId) {
+    const existing = mcpSessions.get(requestedSessionId);
+    if (!existing) return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_NOT_FOUND', message: 'MCP session is unknown or closed.' } });
+    await existing.transport.handleRequest(req, res);
+    return;
+  }
+  if (req.method !== 'POST') return sendJson(res, 400, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_REQUIRED', message: 'Initialize an MCP session first.' } });
+
+  const server = createBrokerMcpServer(broker, versions.brokerVersion);
+  const transport = new NodeStreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    onsessioninitialized: sessionId => mcpSessions.set(sessionId, { server, transport })
+  });
+  transport.onerror = error => telemetry.event('tool_failed', {
+    operation: 'mcp_transport', success: false, errorCategory: 'MCP_TRANSPORT', errorCode: 'MCP_ADAPTER_ERROR', metadata: { message: error.message }
+  });
+  transport.onclose = () => {
+    if (transport.sessionId) mcpSessions.delete(transport.sessionId);
+  };
+  await server.connect(transport);
+  await transport.handleRequest(req, res);
 }
 
 function requireAuthorization(req) {
@@ -143,7 +166,11 @@ async function shutdown(preserveRecoverable) {
   if (!shuttingDown) shuttingDown = true;
   httpServer.close();
   try { await broker.shutdown({ preserveRecoverable }); } finally {
-    await mcpHandler.close?.();
+    await Promise.all([...mcpSessions.values()].map(async ({ server, transport }) => {
+      await transport.close().catch(() => {});
+      await server.close?.().catch(() => {});
+    }));
+    mcpSessions.clear();
     telemetry.close();
     rmSync(config.paths.runningMarker, { force: true });
     process.exit(0);

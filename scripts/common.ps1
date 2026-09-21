@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
 
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:RuntimeRoot = if ($env:FADI_BROWSER_V2_RUNTIME_ROOT) { $env:FADI_BROWSER_V2_RUNTIME_ROOT } else { Join-Path $env:LOCALAPPDATA 'FadiBrowserV2' }
