@@ -42,9 +42,11 @@ const httpServer = createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/health') {
       return sendJson(res, 200, { ...broker.status(), telemetry: telemetryPaths(config) });
     }
-    if (url.pathname === '/mcp') {
+    if (url.pathname.startsWith('/mcp')) {
       requireAuthorization(req);
-      await handleMcpRequest(req, res);
+      const parts = url.pathname.split('/');
+      const preboundClientId = parts.length > 2 && parts[2] ? parts[2] : null;
+      await handleMcpRequest(req, res, preboundClientId);
       return;
     }
     if (req.method !== 'POST') return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'NOT_FOUND', message: 'Route not found.' } });
@@ -84,7 +86,7 @@ async function routeApi(route, body) {
   }
 }
 
-async function handleMcpRequest(req, res) {
+async function handleMcpRequest(req, res, preboundClientId = null) {
   const requestedSessionId = String(req.headers['mcp-session-id'] || '');
   if (requestedSessionId) {
     const existing = mcpSessions.get(requestedSessionId);
@@ -94,7 +96,7 @@ async function handleMcpRequest(req, res) {
   }
   if (req.method !== 'POST') return sendJson(res, 400, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_REQUIRED', message: 'Initialize an MCP session first.' } });
 
-  const server = createBrokerMcpServer(broker, versions.brokerVersion);
+  const server = createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId);
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: sessionId => mcpSessions.set(sessionId, { server, transport })

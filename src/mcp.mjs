@@ -11,7 +11,7 @@ function resolveIdentity(boundContext) {
   return { clientId, leaseToken };
 }
 
-export function createBrokerMcpServer(backend, version = '0.1.0') {
+export function createBrokerMcpServer(backend, version = '0.1.0', preboundClientId = null) {
   const server = new McpServer({
     name: 'fadi-browser-v2',
     version
@@ -22,16 +22,26 @@ export function createBrokerMcpServer(backend, version = '0.1.0') {
 
   const boundContext = { clientId: null, leaseToken: null };
 
+  const clientIdSchema = preboundClientId 
+    ? z.string().optional() 
+    : z.string().min(1);
+
   register(server, 'browser_acquire', 'Allocate one isolated browser session under local client/auth policy.', z.object({
-    client_id: z.string().min(1),
+    client_id: clientIdSchema,
     auth_profile_id: z.string().min(1).optional(),
     task_label: z.string().max(80).optional(),
     wait: z.boolean().optional(),
     wait_timeout_ms: z.number().int().min(1000).max(300000).optional()
   }), async (args, extra) => {
+    const actualClientId = preboundClientId || args.client_id;
+    if (!actualClientId) throw new Error("client_id is required");
+    if (preboundClientId && args.client_id && args.client_id !== preboundClientId) {
+      throw new Error(`Impersonation blocked: MCP connection is pre-bound to client_id '${preboundClientId}'`);
+    }
+
     const waitTimeoutMs = args.wait === false ? 0 : (args.wait_timeout_ms || 30000);
-    const result = await backend.acquire({ clientId: args.client_id, authProfileId: args.auth_profile_id, taskLabel: args.task_label, waitTimeoutMs, signal: extra?.signal });
-    boundContext.clientId = args.client_id;
+    const result = await backend.acquire({ clientId: actualClientId, authProfileId: args.auth_profile_id, taskLabel: args.task_label, waitTimeoutMs, signal: extra?.signal });
+    boundContext.clientId = actualClientId;
     boundContext.leaseToken = result.lease_token;
     const { lease_token: recoveryCredential, ...publicResult } = result;
     return { ...publicResult, recovery_credential: recoveryCredential };
@@ -42,11 +52,17 @@ export function createBrokerMcpServer(backend, version = '0.1.0') {
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
   register(server, 'browser_recover', 'Recover a restart-preserved lease only with its original credential.', z.object({
-    client_id: z.string().min(1),
+    client_id: clientIdSchema,
     recovery_credential: z.string().min(32)
   }), async args => {
-    const result = await backend.recover({ clientId: args.client_id, leaseToken: args.recovery_credential });
-    boundContext.clientId = args.client_id;
+    const actualClientId = preboundClientId || args.client_id;
+    if (!actualClientId) throw new Error("client_id is required");
+    if (preboundClientId && args.client_id && args.client_id !== preboundClientId) {
+      throw new Error(`Impersonation blocked: MCP connection is pre-bound to client_id '${preboundClientId}'`);
+    }
+
+    const result = await backend.recover({ clientId: actualClientId, leaseToken: args.recovery_credential });
+    boundContext.clientId = actualClientId;
     boundContext.leaseToken = args.recovery_credential;
     return result;
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });

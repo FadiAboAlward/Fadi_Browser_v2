@@ -32,6 +32,7 @@ It exists because fixed persistent browsers do not scale cleanly to several conc
 Before changing broker, MCP, queue, lease, diagnostics, or permission behavior, read:
 
 - docs/V1_LESSONS_APPLIED.md
+- docs/CLIENT_INTEGRATION.md
 - docs/adr/ADR-002-server-side-lease-binding.md
 - docs/adr/ADR-003-actionable-fifo-queue.md
 - docs/OPEN_SOURCE_BEST_PRACTICES.md

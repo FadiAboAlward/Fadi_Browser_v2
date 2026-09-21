@@ -11,17 +11,21 @@
   "recoveryWindowMs": 120000,
   "retentionDays": 30,
   "clients": {
-    "client-a": {
-      "defaultAuthProfile": "auth-profile-a",
-      "allowedAuthProfiles": ["auth-profile-a"]
+    "fadi-gpt": {
+      "defaultAuthProfile": "fadi",
+      "allowedAuthProfiles": ["fadi"]
     },
-    "client-b": {
-      "defaultAuthProfile": "auth-profile-b",
-      "allowedAuthProfiles": ["auth-profile-b"]
+    "goilot-gpt": {
+      "defaultAuthProfile": "goilot",
+      "allowedAuthProfiles": ["goilot"]
+    },
+    "goilot-claude": {
+      "defaultAuthProfile": "goilot-claude",
+      "allowedAuthProfiles": ["goilot-claude"]
     },
     "maintenance": {
       "defaultAuthProfile": "public",
-      "allowedAuthProfiles": ["public", "auth-profile-a", "auth-profile-b"]
+      "allowedAuthProfiles": ["public", "fadi", "goilot", "goilot-claude"]
     }
   },
   "authProfiles": {
@@ -29,13 +33,17 @@
       "persistent": false,
       "mode": "portable"
     },
-    "auth-profile-a": {
+    "fadi": {
       "persistent": true,
-      "mode": "portable"
+      "mode": "profile_bound"
     },
-    "auth-profile-b": {
+    "goilot": {
       "persistent": true,
-      "mode": "portable"
+      "mode": "profile_bound"
+    },
+    "goilot-claude": {
+      "persistent": true,
+      "mode": "profile_bound"
     }
   }
 }

@@ -52,7 +52,10 @@ try {
 }
 
 function parseToolJson(result) {
-  if (result.isError) throw new Error('V1 MCP tool returned an error.');
+  if (result.isError) {
+    console.error('V1 MCP tool error:', JSON.stringify(result, null, 2));
+    throw new Error('V1 MCP tool returned an error.');
+  }
   const text = result.content?.find(item => item.type === 'text')?.text;
   if (!text) throw new Error('V1 MCP tool returned no JSON text content.');
   return JSON.parse(text);
