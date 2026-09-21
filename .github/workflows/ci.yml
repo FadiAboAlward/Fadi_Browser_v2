@@ -24,5 +24,4 @@ jobs:
         shell: pwsh
         run: Get-ChildItem src,qa,test,benchmarks -Recurse -Filter *.mjs | ForEach-Object { node --check $_.FullName }
       - name: Secret hygiene
-        shell: pwsh
-        run: ./scripts/secret-scan.ps1
+        run: npm run secret-scan
