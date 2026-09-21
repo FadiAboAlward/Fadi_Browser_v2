@@ -9,8 +9,8 @@ async function testClient(clientId, url) {
   
   const env = { ...process.env, FADI_BROWSER_V2_CLIENT_ID: clientId };
   const transport = new StdioClientTransport({
-    command: 'powershell.exe',
-    args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', `& '${ps1Path}' -ClientId '${clientId}'`],
+    command: process.execPath,
+    args: ['src/mcp-stdio.mjs'],
     env
   });
   
@@ -30,54 +30,65 @@ async function testClient(clientId, url) {
   }
   console.log(`[${clientId}] Acquired:`, acquireResult.content[0].text);
 
-  // Impersonation test
-  if (clientId !== 'fadi-gpt') {
-      const impResult = await client.callTool({
-        name: 'browser_acquire',
-        arguments: { client_id: 'fadi-gpt' }
-      });
-      if (impResult.isError && impResult.content[0].text.includes('Impersonation blocked')) {
-          console.log(`[${clientId}] Impersonation correctly rejected.`);
-      } else {
-          console.error(`[${clientId}] Impersonation SUCCEEDED (script invocation quirk). Skipping failure...`);
-      }
+  try {
+    // Impersonation test
+    if (clientId !== 'fadi-gpt') {
+        const impResult = await client.callTool({
+          name: 'browser_acquire',
+          arguments: { client_id: 'fadi-gpt' }
+        });
+        if (impResult.isError && impResult.content[0].text.includes('Impersonation blocked')) {
+            console.log(`[${clientId}] Impersonation correctly rejected.`);
+        } else {
+            console.error(`[${clientId}] Impersonation SUCCEEDED! This is a severe security failure. Result:`, JSON.stringify(impResult, null, 2));
+            throw new Error('Impersonation test failed');
+        }
+    }
+
+    // Navigate
+    console.log(`[${clientId}] Navigating to ${url}...`);
+    await client.callTool({
+      name: 'browser_navigate',
+      arguments: { url }
+    });
+
+    // Snapshot
+    console.log(`[${clientId}] Taking snapshot...`);
+    const snapResult = await client.callTool({
+      name: 'browser_snapshot',
+      arguments: {}
+    });
+    // Check it returns something
+    if (snapResult.content[0].text.length > 100) {
+        console.log(`[${clientId}] Snapshot received (${snapResult.content[0].text.length} chars)`);
+    } else {
+        console.error(`[${clientId}] Snapshot too short!`);
+    }
+  } finally {
+    // Release
+    console.log(`[${clientId}] Releasing...`);
+    await client.callTool({
+      name: 'browser_release',
+      arguments: {}
+    });
+    
+    await transport.close();
+    console.log(`[${clientId}] Done.\n`);
   }
-
-  // Navigate
-  console.log(`[${clientId}] Navigating to ${url}...`);
-  await client.callTool({
-    name: 'browser_navigate',
-    arguments: { url }
-  });
-
-  // Snapshot
-  console.log(`[${clientId}] Taking snapshot...`);
-  const snapResult = await client.callTool({
-    name: 'browser_snapshot',
-    arguments: {}
-  });
-  // Check it returns something
-  if (snapResult.content[0].text.length > 100) {
-      console.log(`[${clientId}] Snapshot received (${snapResult.content[0].text.length} chars)`);
-  } else {
-      console.error(`[${clientId}] Snapshot too short!`);
-  }
-
-  // Release
-  console.log(`[${clientId}] Releasing...`);
-  await client.callTool({
-    name: 'browser_release',
-    arguments: {}
-  });
-  
-  await transport.close();
-  console.log(`[${clientId}] Done.\n`);
 }
 
 async function main() {
-  await testClient('fadi-gpt', 'https://example.com/1');
-  await testClient('goilot-gpt', 'https://example.com/2');
-  await testClient('goilot-claude', 'https://example.com/3');
+  const tests = [
+    testClient('fadi-gpt', 'https://example.com/1'),
+    testClient('goilot-gpt', 'https://example.com/2'),
+    testClient('goilot-claude', 'https://example.com/3')
+  ];
+
+  await Promise.all(tests);
+  console.log('All concurrent tests passed!');
 }
 
-main().catch(console.error);
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

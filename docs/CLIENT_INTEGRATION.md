@@ -12,9 +12,19 @@ There are currently three user-facing AI clients configured in V2:
 | Goilot GPT          | `goilot-gpt`       | `goilot`            | Persistent (`profile_bound`) |
 | Goilot Claude       | `goilot-claude`    | `goilot-claude`     | Persistent (`profile_bound`) |
 
-*(There are NO other user-facing clients. Maintenance/tests use distinct, non-persistent or isolated test profiles).*
+### Real Environment Registration Status
 
-## Connection Architecture
+**Goilot Claude**:
+- **Environment**: Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
+- **Transport**: Stdio
+- **Entrypoint**: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Fadi\OneDrive\Documents\GitHub\Fadi_Browser_v2\scripts\mcp-stdio.ps1 -ClientId goilot-claude`
+- **Status**: ✅ **Registered & Active**.
+
+**Fadi GPT & Goilot GPT**:
+- **Environment**: ChatGPT (OpenAI Platform)
+- **Transport**: Remote SSE (Cloudflare Tunnels via `tunnel-client.exe`)
+- **Endpoints**: `http://127.0.0.1:8951/mcp/fadi-gpt` and `http://127.0.0.1:8951/mcp/goilot-gpt`
+- **Status**: ⏳ **Pending Tunnels**. The local tunnel profiles (`fadi-gpt.yaml` and `goilot-gpt.yaml`) and watchdog scripts (`start-tunnel.ps1`) have been prepared in `%LOCALAPPDATA%\Antigravity\FadiGPT` and `GoilotGPT`. However, the physical OpenAI tunnel IDs and Runtime API keys must be generated manually in `platform.openai.com` because creating tunnels programmatically requires MFA or a highly privileged `OPENAI_ADMIN_KEY`.
 
 ### 1. Server-Side Pre-Binding (Security)
 
