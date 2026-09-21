@@ -47,6 +47,12 @@ The exact strategy must preserve:
 
 It must avoid unsafe simultaneous ownership of one live profile directory.
 
+### Implemented 0.1.0 policy
+
+Persistent auth profiles map to encrypted agent-browser restore keys in the dedicated V2 namespace. Every task still receives a unique isolated session. The first active lease for a profile is its persistence writer; any simultaneous lease for the same profile loads the baseline with saving disabled. This prevents concurrent state-file writes and avoids sharing a live `user-data-dir`.
+
+The encryption key is local-only and DPAPI-protected. Public sessions do not load or save auth state.
+
 ## OAuth
 
 The agent should autonomously complete normal OAuth browser steps when:

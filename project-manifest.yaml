@@ -1,17 +1,20 @@
 project_name: "Fadi Browser V2"
 repository_role: "public_source_of_truth"
 architecture_version: "0.1"
-project_version: "0.0.1-docs"
-status: "side_by_side_poc"
+project_version: "0.1.0"
+status: "implementation_candidate"
 primary_os: "Windows"
 browser_engine:
   target: "agent-browser"
-  pinned_version: null
+  pinned_version: "0.38.1"
 mcp:
   enabled_target: true
+  protocol_sdk_version: "2.0.0"
+  default_endpoint: "http://127.0.0.1:8951/mcp"
 session_model: "dynamic_isolated_per_task"
 auth_model: "multiple_persistent_local_identities"
 default_concurrency_target: 5
+capacity_behavior: "structured_error"
 identity_fallback: false
 runtime_data:
   location: "local_only"
@@ -22,6 +25,8 @@ telemetry:
     - "rotating_jsonl"
   cloud_export_default: false
   retention_days_target: 30
+runtime_root: "%LOCALAPPDATA%\\FadiBrowserV2"
+startup_task: "Fadi Browser V2"
 security:
   secrets_in_git: false
   raw_auth_state_in_git: false

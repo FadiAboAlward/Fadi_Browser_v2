@@ -6,6 +6,8 @@ Expose stable, simple task-oriented browser primitives while hiding browser-engi
 
 ## Core broker tools
 
+The implemented local endpoint is `http://127.0.0.1:8951/mcp`. A stdio adapter is available through `scripts/mcp-stdio.ps1`. Both enforce the same broker policy.
+
 ### browser_acquire
 
 Purpose: allocate one isolated browser session for a task.
@@ -39,6 +41,17 @@ Release should be idempotent where practical.
 Only if safe persistent ownership recovery is implemented.
 
 Requires an opaque recovery or lease credential.
+
+Implemented browser tools also include:
+
+- `browser_navigate`;
+- `browser_snapshot`;
+- `browser_get_url`;
+- `browser_get_title`;
+- `browser_evaluate`;
+- `browser_command` for an explicit allowlist of common agent-browser interactions.
+
+All require both `client_id` and `lease_token`.
 
 ## Browser operations
 

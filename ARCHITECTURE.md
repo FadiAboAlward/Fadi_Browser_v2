@@ -162,6 +162,14 @@ Custom code should implement only what is necessary for:
 - telemetry;
 - diagnostics.
 
+## Implemented runtime topology
+
+The 0.1.0 implementation uses a Node 24 broker bound to `127.0.0.1:8951`. It exposes a protected Streamable HTTP MCP endpoint at `/mcp` and a small protected local HTTP surface used by Windows operations and the stdio MCP adapter.
+
+The broker invokes the repository-pinned `agent-browser` 0.38.1 CLI. Each lease receives a unique `--session` under the dedicated `fadi-browser-v2` namespace with strict tab pinning. No V1 port, process, profile, tunnel, task, or state directory is reused.
+
+Lease tokens are random 256-bit credentials. Only their SHA-256 hashes are stored. A restart marks active leases recoverable for a bounded window; recovery requires the original token and matching client.
+
 ## Failure philosophy
 
 Ownership and isolation failures are more severe than ordinary navigation failures.

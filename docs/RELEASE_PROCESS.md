@@ -35,3 +35,5 @@ Every release must be reversible.
 The side-by-side design means operational rollback can always choose V1 while V2 is repaired.
 
 Do not delete V1 as part of an ordinary V2 release.
+
+The implemented deployment stores immutable source snapshots under `%LOCALAPPDATA%\FadiBrowserV2\deployments\<commit>` and records current, previous healthy, and running commit references under the V2 state directory. `rollback.ps1` only switches among validated V2 deployments and never touches V1.

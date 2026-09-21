@@ -20,6 +20,13 @@ Default target retention: 30 days.
 
 No cloud telemetry by default.
 
+Implemented local paths:
+
+- `%LOCALAPPDATA%\FadiBrowserV2\data\telemetry.sqlite`;
+- `%LOCALAPPDATA%\FadiBrowserV2\logs\events.jsonl`.
+
+JSONL rotates at 5 MiB with five historical segments. SQLite events older than the configured retention window are deleted at broker startup.
+
 ## Core event fields
 
 - timestamp;
@@ -136,6 +143,8 @@ Generate a sanitized archive containing:
 - relevant OS and resource metadata.
 
 It must exclude auth state.
+
+Ownership attempts rejected before browser access are recorded as `policy_denied` with `prevented: true`. Critical `session_crossover_detected` and `tab_ownership_violation` counts are reserved for confirmed actual isolation failures, so QA attempts do not create false incident metrics.
 
 ## Performance regression
 

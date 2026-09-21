@@ -1,0 +1,132 @@
+{
+  "generated_at": "2026-09-21T11:22:32.333Z",
+  "project_version": "0.1.0",
+  "running_commit": "working-tree@a13c198410a97c82009a3cc70d5b2365f9542522",
+  "engine_version": "0.38.1",
+  "host": {
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "logical_cores": 8,
+    "total_memory_bytes": 21375455232
+  },
+  "results": [
+    {
+      "concurrency": 1,
+      "samples": 1,
+      "session_creation_ms": {
+        "average": 1947.52,
+        "p50": 1947.52,
+        "p95": 1947.52
+      },
+      "first_navigation_ms": {
+        "average": 786.46,
+        "p50": 786.46,
+        "p95": 786.46
+      },
+      "snapshot_ms": {
+        "average": 362.95,
+        "p50": 362.95,
+        "p95": 362.95
+      },
+      "queue_wait_ms": {
+        "p50": 0,
+        "p95": 0
+      },
+      "cleanup_ms": {
+        "average": 955.89,
+        "p50": 955.89,
+        "p95": 955.89
+      },
+      "memory": {
+        "free_before_bytes": 3797737472,
+        "free_after_bytes": 3760713728,
+        "total_bytes": 21375455232
+      },
+      "cpu": {
+        "logical_cores": 8,
+        "broker_samples_recorded_in_telemetry": true
+      },
+      "failures": 0,
+      "failure_rate": 0
+    },
+    {
+      "concurrency": 3,
+      "samples": 3,
+      "session_creation_ms": {
+        "average": 4683.72,
+        "p50": 4797.9,
+        "p95": 4802.97
+      },
+      "first_navigation_ms": {
+        "average": 2664.2,
+        "p50": 2828.91,
+        "p95": 2932.94
+      },
+      "snapshot_ms": {
+        "average": 932.53,
+        "p50": 863.61,
+        "p95": 1130.38
+      },
+      "queue_wait_ms": {
+        "p50": 0,
+        "p95": 0
+      },
+      "cleanup_ms": {
+        "average": 2631.93,
+        "p50": 2704.67,
+        "p95": 2834.3
+      },
+      "memory": {
+        "free_before_bytes": 3760189440,
+        "free_after_bytes": 3901399040,
+        "total_bytes": 21375455232
+      },
+      "cpu": {
+        "logical_cores": 8,
+        "broker_samples_recorded_in_telemetry": true
+      },
+      "failures": 0,
+      "failure_rate": 0
+    },
+    {
+      "concurrency": 5,
+      "samples": 5,
+      "session_creation_ms": {
+        "average": 8418.88,
+        "p50": 8454.06,
+        "p95": 9045.63
+      },
+      "first_navigation_ms": {
+        "average": 5093,
+        "p50": 5260.05,
+        "p95": 5561.45
+      },
+      "snapshot_ms": {
+        "average": 2631.9,
+        "p50": 2542.83,
+        "p95": 3462.36
+      },
+      "queue_wait_ms": {
+        "p50": 0,
+        "p95": 0
+      },
+      "cleanup_ms": {
+        "average": 9930.08,
+        "p50": 10208.86,
+        "p95": 10583.79
+      },
+      "memory": {
+        "free_before_bytes": 3901366272,
+        "free_after_bytes": 3880169472,
+        "total_bytes": 21375455232
+      },
+      "cpu": {
+        "logical_cores": 8,
+        "broker_samples_recorded_in_telemetry": true
+      },
+      "failures": 0,
+      "failure_rate": 0
+    }
+  ]
+}

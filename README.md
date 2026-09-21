@@ -2,8 +2,8 @@
 
 > A local-first, multi-session browser automation broker for AI agents.
 
-**Current status:** side-by-side production PoC  
-**Repository role:** public source of truth for architecture, code, tests, and documentation  
+**Current status:** 0.1.0 implementation candidate; blocking local QA is required before production-ready claims
+**Repository role:** public source of truth for architecture, code, tests, and documentation
 **Runtime role:** local machine keeps authentication state, cookies, tokens, logs, and private mappings
 
 ## عربي — ملخص سريع
@@ -150,6 +150,49 @@ See docs/OBSERVABILITY.md.
 This project should not be called production-ready merely because the broker process starts. Production readiness requires blocking QA, including concurrent isolation and a regression check proving the existing V1 setup still works.
 
 Initial target: **5 concurrent isolated sessions**.
+
+## Implemented runtime
+
+- Node.js 24+ broker.
+- Exact engine pin: `agent-browser` 0.38.1.
+- Streamable HTTP MCP: `http://127.0.0.1:8951/mcp`.
+- Local stdio MCP wrapper: `scripts/mcp-stdio.ps1`.
+- Runtime root: `%LOCALAPPDATA%\FadiBrowserV2`.
+- SQLite: `%LOCALAPPDATA%\FadiBrowserV2\data\telemetry.sqlite`.
+- JSONL: `%LOCALAPPDATA%\FadiBrowserV2\logs\events.jsonl`.
+- Startup task: `Fadi Browser V2` at user logon, limited privilege.
+
+The endpoint is loopback-only and browser/MCP operations require a local bearer credential protected with Windows DPAPI. Secrets are never printed by the operational scripts.
+
+## Windows quick start
+
+From an elevated PowerShell when Task Scheduler registration requires it:
+
+```powershell
+.\scripts\install.ps1
+.\scripts\status.ps1
+.\scripts\doctor.ps1
+.\scripts\qa.ps1
+```
+
+Operational commands:
+
+```powershell
+.\scripts\start.ps1
+.\scripts\stop.ps1
+.\scripts\restart.ps1
+.\scripts\report.ps1 -Days 7
+.\scripts\diagnostics.ps1 -Days 7
+.\scripts\benchmark.ps1
+```
+
+Deployment remains explicit:
+
+```powershell
+.\scripts\deploy.ps1 -Commit origin/main
+.\scripts\update.ps1
+.\scripts\rollback.ps1
+```
 
 ## Source-of-truth hierarchy
 

@@ -36,6 +36,13 @@ The repository may contain:
 
 It must never contain real secret values.
 
+V2 generates two local secrets during installation:
+
+- a broker/MCP bearer credential;
+- the 256-bit `agent-browser` state-encryption key.
+
+Both are protected with Windows DPAPI CurrentUser under `%LOCALAPPDATA%\FadiBrowserV2\config`. Operational scripts decrypt them only into the child process environment and never print them.
+
 ## OAuth policy
 
 Routine OAuth browser interaction may be automated when the user has already authorized the relevant integration or task.
@@ -58,6 +65,8 @@ The browser agent may:
 Concurrent tasks must not attach to the same live profile directory if the engine or provider does not support safe concurrent ownership.
 
 Authentication persistence and task-session isolation are separate concerns.
+
+V2 uses encrypted agent-browser restore state with one persistence writer per auth profile. Concurrent sessions never share a live profile directory, and read-only copies never overwrite durable identity state.
 
 ## Logging
 
