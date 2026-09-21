@@ -7,6 +7,7 @@ Architecture decisions belong in docs/adr/.
 - ADR-001 — Run V2 side by side with V1.
 - ADR-002 — Prefer server-side lease/task binding and avoid routine caller-held lease credentials.
 - ADR-003 — Expose an actionable bounded FIFO queue when session capacity is full.
+- ADR-004 — Distinguish portable auth identities from profile-bound identities.
 
 ## Decisions to record as implementation progresses
 
