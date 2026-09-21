@@ -12,6 +12,10 @@ Fadi Browser V2 هو طبقة تشغيل متصفحات ديناميكية لع�
 
 النظام الجديد يعمل بجانب Fadi Playwright V1 ولا يستبدله أثناء مرحلة الاختبار.
 
+V2 مبني أيضًا على الدروس المؤكدة من تشغيل V1 الفعلي. أهم هذه الدروس: إبقاء ملكية الـlease داخل الـbroker قدر الإمكان بدل جعل الـAI يعيد إرسال قيمة حساسة المظهر في كل أداة، توفير Queue قابلة للاستخدام فعلًا عند امتلاء السعة، وإظهار حالة نافذة المتصفح وتشخيصها بوضوح.
+
+راجع: docs/V1_LESSONS_APPLIED.md
+
 ## Why this project exists
 
 A fixed pair of persistent browsers works well for one or two tasks, but becomes fragile when several AI clients work concurrently. Typical failure modes include:
@@ -23,17 +27,17 @@ A fixed pair of persistent browsers works well for one or two tasks, but becomes
 - scaling limited by a fixed number of browsers;
 - awkward account switching;
 - repeated MFA/OTP when identities are not modeled explicitly;
-- poor visibility into why failures happened.
+- poor visibility into why failures happened;
+- lease handling that creates unnecessary approval friction;
+- queue capability that exists internally but is not actionable from the client.
 
 Fadi Browser V2 separates five concepts that must never be conflated:
 
-1. **AI Client** — the caller, such as ChatGPT, Claude, Codex, or another MCP client.
-2. **Auth Identity** — the persistent login identity selected for a task.
-3. **Lease** — exclusive ownership granted to one task.
-4. **Browser Session** — the isolated browser runtime created for that task.
-5. **Browser Process** — the underlying browser process managed by the engine.
-
-This separation allows multiple tasks to run concurrently while preserving the correct authenticated identity.
+1. **AI Client**
+2. **Auth Identity**
+3. **Internal Lease**
+4. **Browser Session**
+5. **Browser Process**
 
 ## Target architecture
 
@@ -42,7 +46,9 @@ flowchart LR
     A[AI Client] --> B[Fadi Browser V2 MCP]
     B --> C[Policy and Client Mapping]
     C --> D[Lease Broker]
+    D --> Q[Bounded FIFO Queue]
     D --> E[Auth Profile Resolver]
+    Q --> E
     E --> F[Session Factory]
     F --> G1[Isolated Session 1]
     F --> G2[Isolated Session 2]
@@ -53,83 +59,34 @@ flowchart LR
 
 ## Core design principles
 
-- **Local first.** Start on the user's Windows machine; VPS deployment is optional later.
-- **Side by side.** Never modify, replace, or reuse the live state directories of Fadi Playwright V1 during evaluation.
-- **Dynamic sessions.** Browsers are allocated per task, not hard-wired to a specific AI account.
-- **Multiple persistent identities.** A user may maintain more than one login identity without repeated sign-out/sign-in.
-- **No shared live user-data directory across concurrent processes.** Authentication may be restored from a persistent identity, but active task sessions remain isolated.
-- **Thin broker.** Use official browser-engine capabilities; custom code focuses on leases, identity policy, lifecycle, MCP, and observability.
-- **Agent-first operations.** Automation performs routine technical work itself rather than delegating terminal/configuration steps to the user.
-- **Observable by default.** Important lifecycle events are logged safely from day one.
-- **Secrets stay local.** GitHub contains code and safe documentation only.
-
-## AI clients
-
-The broker is client-agnostic. Examples:
-
-- ChatGPT environment A -> default auth profile A
-- ChatGPT environment B -> default auth profile B
-- Claude -> configured default profile
-- Codex -> development and maintenance client
-
-Mappings are local policy, not public repository data.
+- **Local first.**
+- **Side by side with V1.**
+- **Dynamic sessions.**
+- **Server-side ownership.** Prefer broker-side task/session binding so ordinary tools do not require a sensitive-looking public lease value.
+- **Actionable queue.** When capacity is full, callers can wait deterministically with a bounded timeout.
+- **Multiple persistent identities.**
+- **No unsafe shared live user-data directory across concurrent processes.**
+- **Thin broker.**
+- **Agent-first operations.**
+- **Observable by default.**
+- **Accurate tool metadata.**
+- **Secrets stay local.**
 
 ## Authentication model
 
-An **Auth Profile** is a long-lived identity container. It can contain login state for multiple sites. A task receives an isolated session derived from or restored for the selected identity.
+An Auth Profile is a long-lived identity container. A task receives an isolated session derived from or restored for the selected identity.
 
-The system should minimize repeated MFA, but it must not bypass a provider's security requirements.
-
-### OAuth
-
-When the user has authorized the integration or task and the provider allows normal browser interaction, the agent should complete the OAuth UI itself. Routine consent clicking should not be handed back to the user unnecessarily.
-
-If the provider presents materially broader permissions than were authorized, that difference must be surfaced instead of silently expanding access.
-
-### CAPTCHA and anti-bot challenges
-
-The agent may navigate to and prepare the challenge flow, but this project does not implement CAPTCHA bypass, challenge-solving services, or anti-bot evasion. If a provider requires a challenge that cannot be completed normally through the browser, only the minimum necessary human interaction is requested, after which the agent resumes automatically.
+Routine OAuth should be completed by the agent when already authorized. Provider-enforced MFA, hardware keys, or CAPTCHA may still require minimal human interaction. The project does not implement CAPTCHA bypass or anti-bot evasion.
 
 ## Security boundary
 
-**Never commit:**
-
-- cookies;
-- passwords;
-- OTPs;
-- API keys;
-- OAuth access or refresh tokens;
-- Authorization headers;
-- auth profile databases;
-- encryption keys;
-- tunnel secrets;
-- raw production logs;
-- browser history;
-- screenshots containing private information.
-
-See SECURITY.md.
+Never commit cookies, passwords, OTPs, API keys, OAuth tokens, Authorization headers, auth profile databases, encryption keys, tunnel secrets, raw production logs, browser history, or private screenshots.
 
 ## Observability
 
-The target telemetry design uses:
+The target telemetry design uses local SQLite plus rotating JSONL logs, with sanitized identifiers and no private page content.
 
-- local SQLite for durable structured events and metrics;
-- rotating JSONL logs for diagnostics;
-- sanitized URLs or origins only;
-- no page content, cookies, passwords, tokens, or authorization headers.
-
-We want to answer questions such as:
-
-- How many sessions ran in the last 30 days?
-- What was the success rate?
-- What was peak concurrency?
-- Which operations became slower?
-- How often did auth restore fail?
-- How often was MFA requested?
-- Did any session crossover or tab-ownership violation occur?
-- What changed after a specific release?
-
-See docs/OBSERVABILITY.md.
+We want to know session volume, success rate, queue wait, P50/P95 latency, peak concurrency, auth restore failures, MFA events, ownership violations, browser crashes, window visibility/state, and regressions by version.
 
 ## Repository map
 
@@ -140,14 +97,18 @@ See docs/OBSERVABILITY.md.
 - docs/PROJECT_CONTEXT.md — detailed problem statement and history.
 - docs/AI_HANDOFF.md — how a new AI agent should take over safely.
 - docs/AUTH_ARCHITECTURE.md — identities, state, OAuth, MFA.
+- docs/V1_LESSONS_APPLIED.md — confirmed V1 lessons translated into V2 requirements.
+- docs/MCP_INTERFACE.md — public broker/MCP contract.
 - docs/OBSERVABILITY.md — logs, metrics, reports, diagnostics.
 - docs/QA_STRATEGY.md — blocking acceptance tests.
-- docs/adr/ADR-001-side-by-side.md — why V2 is isolated from V1.
+- docs/adr/ADR-001-side-by-side.md
+- docs/adr/ADR-002-server-side-lease-binding.md
+- docs/adr/ADR-003-actionable-fifo-queue.md
 - project-manifest.yaml — machine-readable project overview.
 
 ## Maturity
 
-This project should not be called production-ready merely because the broker process starts. Production readiness requires blocking QA, including concurrent isolation and a regression check proving the existing V1 setup still works.
+Production readiness requires blocking QA, including concurrent isolation, queue behavior, fresh-chat/reconnect ownership tests, and a regression check proving V1 still works.
 
 Initial target: **5 concurrent isolated sessions**.
 
@@ -171,4 +132,4 @@ Any material architecture change should add or update an ADR.
 
 ## License
 
-No public license has been selected yet. Until one is explicitly added, normal copyright rules apply even though the repository is public.
+No public license has been selected yet.
