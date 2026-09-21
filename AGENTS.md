@@ -33,8 +33,10 @@ Before changing broker, MCP, queue, lease, diagnostics, or permission behavior, 
 - docs/V1_LESSONS_APPLIED.md
 - docs/adr/ADR-002-server-side-lease-binding.md
 - docs/adr/ADR-003-actionable-fifo-queue.md
+- docs/OPEN_SOURCE_BEST_PRACTICES.md
+- docs/UPSTREAM_RISK_REGISTER.md
 
-These files capture confirmed operational lessons from Fadi Playwright V1 that V2 must not repeat.
+These files capture confirmed V1 lessons plus current open-source best practices and upstream risks that V2 must not repeat.
 
 ## Mental model
 
