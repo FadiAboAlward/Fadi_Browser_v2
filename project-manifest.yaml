@@ -1,7 +1,7 @@
 project_name: "Fadi Browser V2"
 repository_role: "public_source_of_truth"
-architecture_version: "0.1"
-project_version: "0.0.1-docs"
+architecture_version: "0.2"
+project_version: "0.0.2-docs"
 status: "side_by_side_poc"
 primary_os: "Windows"
 browser_engine:
@@ -9,10 +9,29 @@ browser_engine:
   pinned_version: null
 mcp:
   enabled_target: true
+  preferred_task_binding: "server_side"
+  routine_public_lease_credential_required: false
+  public_handle_fallback:
+    allowed: true
+    must_be_non_secret: true
+    server_side_ownership_validation: true
 session_model: "dynamic_isolated_per_task"
 auth_model: "multiple_persistent_local_identities"
 default_concurrency_target: 5
+default_per_client_concurrency_recommendation: 3
 identity_fallback: false
+queue:
+  required: true
+  actionable_from_public_mcp: true
+  default_policy: "fifo"
+  bounded_wait: true
+  visible_position: true
+window_diagnostics:
+  required_for_headful: true
+  expose_state: true
+  restore_same_window_supported_target: true
+tool_metadata:
+  semantic_risk_audit_required: true
 runtime_data:
   location: "local_only"
   committed_to_git: false
@@ -27,6 +46,7 @@ security:
   raw_auth_state_in_git: false
 legacy_system:
   relationship: "side_by_side_untouched"
+  lessons_document: "docs/V1_LESSONS_APPLIED.md"
 docs:
   ai_entrypoint: "AGENTS.md"
   human_entrypoint: "README.md"
@@ -36,4 +56,10 @@ qa:
   blocking_concurrency_target: 5
   require_no_session_crossover: true
   require_no_identity_fallback: true
+  require_no_public_credential_like_lease_argument: true
+  require_actionable_queue: true
+  require_transport_refresh_ownership_test: true
+  require_fresh_chat_ownership_test: true
+  require_window_state_diagnostics_test: true
+  require_tool_risk_metadata_audit: true
   require_legacy_regression_check: true
