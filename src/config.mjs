@@ -52,12 +52,16 @@ export function loadConfig(options = {}) {
       throw new BrokerError('CONFIG', 'INVALID_AUTH_MODE', `Auth profile ${id} has an invalid mode.`, undefined, 500);
     }
     if (profile.mode === 'profile_bound') {
+      const ownedAuthRoot = path.resolve(resolvedRoot, 'auth');
       if (!profile.profilePath) {
-        throw new BrokerError('CONFIG', 'PROFILE_PATH_REQUIRED', `Profile-bound auth profile ${id} requires profilePath.`, undefined, 500);
+        // Default: auto-derive a safe profilePath under the V2 auth root using the profile ID.
+        // This allows a fresh config.json (copied from config.example.json) to start without
+        // requiring the operator to manually add profilePath for every profile_bound profile.
+        const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+        profile.profilePath = path.join(ownedAuthRoot, safeId);
       }
       const resolvedProfilePath = path.resolve(expandWindowsEnv(profile.profilePath));
-      const ownedAuthRoot = path.resolve(resolvedRoot, 'auth');
-      if (!resolvedProfilePath.startsWith(`${ownedAuthRoot}${path.sep}`)) {
+      if (!resolvedProfilePath.startsWith(`${ownedAuthRoot}${path.sep}`) && resolvedProfilePath !== ownedAuthRoot) {
         throw new BrokerError('CONFIG', 'PROFILE_PATH_OUTSIDE_V2', `Profile-bound auth profile ${id} must use a path under the V2 runtime auth directory.`, undefined, 500);
       }
       profile.profilePath = resolvedProfilePath;
