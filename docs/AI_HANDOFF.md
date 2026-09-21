@@ -7,18 +7,19 @@ This file lets a new AI agent take over the project without prior conversation c
 1. Read AGENTS.md.
 2. Read ARCHITECTURE.md.
 3. Read project-manifest.yaml.
-4. Read relevant ADRs.
-5. If runtime access exists, run status.
-6. Run doctor.
-7. Pull a sanitized report for the relevant period.
-8. Inspect diagnostics if the task is incident-related.
-9. Create a branch for non-trivial work.
-10. Make the smallest safe change.
-11. Run tests.
-12. Run concurrency regression.
-13. Compare benchmark for performance changes.
-14. Update docs or ADR if behavior changed.
-15. Open a PR.
+4. Read docs/V1_LESSONS_APPLIED.md.
+5. Read relevant ADRs, especially ADR-002 and ADR-003.
+6. If runtime access exists, run status.
+7. Run doctor.
+8. Pull a sanitized report for the relevant period.
+9. Inspect diagnostics if the task is incident-related.
+10. Create a branch for non-trivial work.
+11. Make the smallest safe change.
+12. Run tests.
+13. Run concurrency and reconnect regressions.
+14. Compare benchmark for performance changes.
+15. Update docs or ADR if behavior changed.
+16. Open a PR.
 
 ## If the user says it is slow
 
@@ -51,6 +52,20 @@ Collect:
 - tab or session ownership violation events.
 
 Do not continue normal operations until ownership invariants are understood.
+
+## If tasks stop when capacity is full
+
+Check whether the public queue path is actually usable.
+
+A status flag saying queueing exists is not enough. The caller must be able to join/wait with a bounded timeout and visible position.
+
+Do not reclaim a healthy live session to satisfy queued work.
+
+## If the user cannot tell which browser is controlled
+
+Check browser/window diagnostics first.
+
+Look for executable, profile alias, process ID, window state, visibility, and safe window identity before assuming the wrong browser was launched.
 
 ## If auth starts asking for MFA
 
