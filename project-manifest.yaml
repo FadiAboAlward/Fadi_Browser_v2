@@ -1,0 +1,39 @@
+project_name: "Fadi Browser V2"
+repository_role: "public_source_of_truth"
+architecture_version: "0.1"
+project_version: "0.0.1-docs"
+status: "side_by_side_poc"
+primary_os: "Windows"
+browser_engine:
+  target: "agent-browser"
+  pinned_version: null
+mcp:
+  enabled_target: true
+session_model: "dynamic_isolated_per_task"
+auth_model: "multiple_persistent_local_identities"
+default_concurrency_target: 5
+identity_fallback: false
+runtime_data:
+  location: "local_only"
+  committed_to_git: false
+telemetry:
+  target_backend:
+    - "sqlite"
+    - "rotating_jsonl"
+  cloud_export_default: false
+  retention_days_target: 30
+security:
+  secrets_in_git: false
+  raw_auth_state_in_git: false
+legacy_system:
+  relationship: "side_by_side_untouched"
+docs:
+  ai_entrypoint: "AGENTS.md"
+  human_entrypoint: "README.md"
+  architecture: "ARCHITECTURE.md"
+  security: "SECURITY.md"
+qa:
+  blocking_concurrency_target: 5
+  require_no_session_crossover: true
+  require_no_identity_fallback: true
+  require_legacy_regression_check: true
