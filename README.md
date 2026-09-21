@@ -2,8 +2,8 @@
 
 > A local-first, multi-session browser automation broker for AI agents.
 
-**Current status:** side-by-side production PoC  
-**Repository role:** public source of truth for architecture, code, tests, and documentation  
+**Current status:** 0.1.0 implementation candidate; blocking local QA is required before production-ready claims
+**Repository role:** public source of truth for architecture, code, tests, and documentation
 **Runtime role:** local machine keeps authentication state, cookies, tokens, logs, and private mappings
 
 ## عربي — ملخص سريع
@@ -111,6 +111,52 @@ We want to know session volume, success rate, queue wait, P50/P95 latency, peak 
 Production readiness requires blocking QA, including concurrent isolation, queue behavior, fresh-chat/reconnect ownership tests, and a regression check proving V1 still works.
 
 Initial target: **5 concurrent isolated sessions**.
+
+## Implemented runtime
+
+- Node.js 24+ broker.
+- Exact engine pin: `agent-browser` 0.38.1.
+- Streamable HTTP MCP: `http://127.0.0.1:8951/mcp`.
+- Local stdio MCP wrapper: `scripts/mcp-stdio.ps1`.
+- Stateful MCP transport sessions keep lease ownership server-side; routine browser tool schemas do not expose `lease_token` or `client_id`.
+- Strict bounded FIFO queue with cancellation, timeout, visible telemetry, and configurable per-client caps.
+- Portable identities use known-good restore validation; profile-bound identities require a dedicated V2-owned profile path and serialize access.
+- Runtime root: `%LOCALAPPDATA%\FadiBrowserV2`.
+- SQLite: `%LOCALAPPDATA%\FadiBrowserV2\data\telemetry.sqlite`.
+- JSONL: `%LOCALAPPDATA%\FadiBrowserV2\logs\events.jsonl`.
+- Startup task: `Fadi Browser V2` at user logon, limited privilege.
+
+The endpoint is loopback-only and browser/MCP operations require a local bearer credential protected with Windows DPAPI. Secrets are never printed by the operational scripts.
+
+## Windows quick start
+
+From an elevated PowerShell when Task Scheduler registration requires it:
+
+```powershell
+.\scripts\install.ps1
+.\scripts\status.ps1
+.\scripts\doctor.ps1
+.\scripts\qa.ps1
+```
+
+Operational commands:
+
+```powershell
+.\scripts\start.ps1
+.\scripts\stop.ps1
+.\scripts\restart.ps1
+.\scripts\report.ps1 -Days 7
+.\scripts\diagnostics.ps1 -Days 7
+.\scripts\benchmark.ps1
+```
+
+Deployment remains explicit:
+
+```powershell
+.\scripts\deploy.ps1 -Commit origin/main
+.\scripts\update.ps1
+.\scripts\rollback.ps1
+```
 
 ## Source-of-truth hierarchy
 

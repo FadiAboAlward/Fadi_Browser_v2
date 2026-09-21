@@ -16,6 +16,16 @@ This document defines the intended operational experience. Exact script names ma
 
 Windows-friendly PowerShell wrappers are preferred.
 
+Implemented wrappers are under `scripts/`:
+
+- `install.ps1`, `start.ps1`, `stop.ps1`, `restart.ps1`;
+- `status.ps1`, `doctor.ps1`, `report.ps1`, `diagnostics.ps1`;
+- `qa.ps1`, `benchmark.ps1`;
+- `deploy.ps1`, `update.ps1`, `rollback.ps1`;
+- `uninstall-v2.ps1`.
+
+`uninstall-v2.ps1` preserves auth state by default. Removing it requires the explicit `-RemoveAuthState` switch.
+
 ## Start
 
 Starting V2 should:
@@ -104,3 +114,7 @@ It must not delete:
 - unrelated tunnels.
 
 Auth-state deletion should be explicit and separately confirmed if the implementation treats it as valuable state.
+
+## Explicit deployment
+
+`deploy.ps1` fetches the approved commit, requires a clean repository, verifies that the commit is contained in `origin/main`, creates an immutable local deployment directory, installs exact dependencies, runs tests and secret scanning, switches the runtime pointer, starts V2, and performs a browser smoke test. Failure attempts rollback to the previous healthy deployment.

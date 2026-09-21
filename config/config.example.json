@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "runtimeRoot": "%LOCALAPPDATA%\\FadiBrowserV2",
+  "host": "127.0.0.1",
+  "port": 8951,
+  "maxConcurrentSessions": 5,
+  "queueMaxDepth": 10,
+  "queueWaitTimeoutMs": 30000,
+  "maxSessionsPerClient": 3,
+  "leaseTtlMs": 300000,
+  "recoveryWindowMs": 120000,
+  "retentionDays": 30,
+  "clients": {
+    "client-a": {
+      "defaultAuthProfile": "auth-profile-a",
+      "allowedAuthProfiles": ["auth-profile-a"]
+    },
+    "client-b": {
+      "defaultAuthProfile": "auth-profile-b",
+      "allowedAuthProfiles": ["auth-profile-b"]
+    },
+    "maintenance": {
+      "defaultAuthProfile": "public",
+      "allowedAuthProfiles": ["public", "auth-profile-a", "auth-profile-b"]
+    }
+  },
+  "authProfiles": {
+    "public": {
+      "persistent": false,
+      "mode": "portable"
+    },
+    "auth-profile-a": {
+      "persistent": true,
+      "mode": "portable"
+    },
+    "auth-profile-b": {
+      "persistent": true,
+      "mode": "portable"
+    }
+  }
+}

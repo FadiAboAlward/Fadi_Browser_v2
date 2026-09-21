@@ -4,32 +4,39 @@ dist/
 build/
 coverage/
 
-# Local runtime
-runtime/
-logs/
-diagnostics/
-tmp/
-temp/
-*.sqlite
-*.sqlite3
-*.db
-*.db-journal
-*.jsonl
-
-# Authentication and browser state
-auth/
-profiles/
-browser-state/
-storage-state/
-user-data/
-cookies/
-sessions-private/
-*.har
-
 # Secrets
 .env
 .env.*
 !.env.example
+
+# Runtime, identity, auth, telemetry, diagnostics, and browser state stay local.
+runtime/
+.runtime/
+logs/
+diagnostics/
+tmp/
+temp/
+auth-state/
+browser-state/
+auth/
+profiles/
+storage-state/
+user-data/
+cookies/
+sessions-private/
+qa/results/
+diagnostics-*.zip
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-journal
+*.jsonl
+*.ndjson
+*.auth-state.json
+*.dpapi
+*.har
 *.key
 *.pem
 *.p12
@@ -38,16 +45,18 @@ secrets/
 credentials/
 tokens/
 
-# Local config
+# Local policy may contain private client/profile mappings.
+config/config.local.json
+config/*.private.json
 config/local.*
 config/private.*
 client-mappings.*
 
-# OS and editor
+# Test and benchmark transient artifacts.
+*.log
+
+# Editor/OS files.
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Diagnostics archives
-diagnostics-*.zip
