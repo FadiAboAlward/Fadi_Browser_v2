@@ -57,6 +57,27 @@ test('transport_refresh_retains_task_ownership', async () => {
   assert.equal(calls.at(-1)[1].leaseToken, 'r'.repeat(64));
 });
 
+test('chat_identity_retains_ownership_across_distinct_mcp_servers', async () => {
+  const calls = [];
+  const backend = {
+    acquire: async input => { calls.push(['acquire', input]); return { lease_token: 'r'.repeat(64), status: 'ACTIVE' }; },
+    navigate: input => { calls.push(['navigate', input]); return { ok: true }; },
+    release: input => { calls.push(['release', input]); return { status: 'CLOSED' }; }
+  };
+  const chatA = { clientId: null, leaseToken: null };
+  const chatB = { clientId: null, leaseToken: null };
+  const acquireServer = createBrokerMcpServer(backend, '0.1.0', 'goilot-gpt', chatA);
+  const navigateServer = createBrokerMcpServer(backend, '0.1.0', 'goilot-gpt', chatA);
+  const otherChatServer = createBrokerMcpServer(backend, '0.1.0', 'goilot-gpt', chatB);
+  await call(acquireServer, 'browser_acquire', { auth_profile_id: 'goilot' });
+  assert.equal((await call(otherChatServer, 'browser_navigate', { url: 'https://example.com' })).isError, true);
+  assert.equal((await call(navigateServer, 'browser_navigate', { url: 'https://example.com' })).isError, undefined);
+  assert.deepEqual(calls.at(-1)[1], { clientId: 'goilot-gpt', leaseToken: 'r'.repeat(64), url: 'https://example.com' });
+  const releaseServer = createBrokerMcpServer(backend, '0.1.0', 'goilot-gpt', chatA);
+  assert.equal((await call(releaseServer, 'browser_release')).isError, undefined);
+  assert.equal((await call(navigateServer, 'browser_navigate', { url: 'https://example.com' })).isError, true);
+});
+
 test('fresh_chat_has_no_inherited_lease', async () => {
   const first = fixture();
   await call(first.server, 'browser_acquire', { client_id: 'client-a' });

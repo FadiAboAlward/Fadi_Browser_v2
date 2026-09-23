@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -31,6 +31,7 @@ const telemetry = new Telemetry(config, versions);
 const engine = new AgentBrowserEngine(config);
 const broker = new LeaseBroker(config, telemetry, engine, versions);
 const mcpSessions = new Map();
+const goilotTaskContexts = new Map();
 const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();
 
@@ -87,19 +88,39 @@ async function routeApi(route, body) {
 }
 
 async function handleMcpRequest(req, res, preboundClientId = null) {
+  // ChatGPT's tunnel creates a fresh MCP transport session for each tool call.
+  // Its stable, ingress-provided chat identity is the task boundary for Goilot only.
+  const taskKey = goilotTaskKey(req, preboundClientId);
   const requestedSessionId = String(req.headers['mcp-session-id'] || '');
   if (requestedSessionId) {
     const existing = mcpSessions.get(requestedSessionId);
     if (!existing) return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_NOT_FOUND', message: 'MCP session is unknown or closed.' } });
+    if (existing.preboundClientId !== preboundClientId || existing.taskKey !== taskKey) {
+      return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_NOT_FOUND', message: 'MCP session is unknown or closed.' } });
+    }
     await existing.transport.handleRequest(req, res);
     return;
   }
   if (req.method !== 'POST') return sendJson(res, 400, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_REQUIRED', message: 'Initialize an MCP session first.' } });
 
-  const server = createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId);
+  let taskContext = null;
+  if (taskKey) {
+    const now = Date.now();
+    for (const [key, entry] of goilotTaskContexts) {
+      if (now - entry.lastSeen > config.leaseTtlMs + config.recoveryWindowMs + 60000) goilotTaskContexts.delete(key);
+    }
+    let entry = goilotTaskContexts.get(taskKey);
+    if (!entry) {
+      entry = { context: { clientId: null, leaseToken: null }, lastSeen: now };
+      goilotTaskContexts.set(taskKey, entry);
+    }
+    entry.lastSeen = now;
+    taskContext = entry.context;
+  }
+  const server = createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId, taskContext);
   const transport = new NodeStreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
-    onsessioninitialized: sessionId => mcpSessions.set(sessionId, { server, transport })
+    onsessioninitialized: sessionId => mcpSessions.set(sessionId, { server, transport, preboundClientId, taskKey })
   });
   transport.onerror = error => telemetry.event('tool_failed', {
     operation: 'mcp_transport', success: false, errorCategory: 'MCP_TRANSPORT', errorCode: 'MCP_ADAPTER_ERROR', metadata: { message: error.message }
@@ -109,6 +130,14 @@ async function handleMcpRequest(req, res, preboundClientId = null) {
   };
   await server.connect(transport);
   await transport.handleRequest(req, res);
+}
+
+function goilotTaskKey(req, preboundClientId) {
+  if (preboundClientId !== 'goilot-gpt') return null;
+  const session = req.headers['x-openai-session'];
+  const subject = req.headers['x-openai-subject'];
+  if (typeof session !== 'string' || typeof subject !== 'string' || !session || !subject || session.length > 1024 || subject.length > 1024) return null;
+  return createHash('sha256').update(`${subject.length}:${subject}${session.length}:${session}`).digest('hex');
 }
 
 function requireAuthorization(req) {

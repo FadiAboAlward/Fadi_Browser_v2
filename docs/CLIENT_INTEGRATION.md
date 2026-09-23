@@ -20,11 +20,19 @@ There are currently three user-facing AI clients configured in V2:
 - **Entrypoint**: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Fadi\OneDrive\Documents\GitHub\Fadi_Browser_v2\scripts\mcp-stdio.ps1 -ClientId goilot-claude`
 - **Status**: ✅ **Registered & Active**.
 
-**Fadi GPT & Goilot GPT**:
+**Fadi GPT**:
 - **Environment**: ChatGPT (OpenAI Platform)
 - **Transport**: Remote SSE (Cloudflare Tunnels via `tunnel-client.exe`)
-- **Endpoints**: `http://127.0.0.1:8951/mcp/fadi-gpt` and `http://127.0.0.1:8951/mcp/goilot-gpt`
-- **Status**: ⏳ **Pending Tunnels**. The local tunnel profiles (`fadi-gpt.yaml` and `goilot-gpt.yaml`) and watchdog scripts (`start-tunnel.ps1`) have been prepared in `%LOCALAPPDATA%\Antigravity\FadiGPT` and `GoilotGPT`. However, the physical OpenAI tunnel IDs and Runtime API keys must be generated manually in `platform.openai.com` because creating tunnels programmatically requires MFA or a highly privileged `OPENAI_ADMIN_KEY`.
+- **Endpoint**: `http://127.0.0.1:8951/mcp/fadi-gpt`
+- **Status**: See the Fadi GPT task; Goilot activation does not change this client.
+
+**Goilot GPT**:
+- **Environment**: ChatGPT in the `Alex_Workspace` Business workspace, using the separate V1 Account B browser for setup and QA.
+- **Transport**: OpenAI secure MCP tunnel via the existing Goilot-only `tunnel-client.exe` profile.
+- **Endpoint**: `http://127.0.0.1:8951/mcp/goilot-gpt`
+- **App authentication**: ChatGPT app uses `No Auth`; the local tunnel supplies the broker credential through encrypted local configuration. The credential is never entered into ChatGPT or included in Git.
+- **Task binding**: ChatGPT issues a fresh MCP transport session for each tool call. For this endpoint only, the broker hashes the ingress-provided `x-openai-subject` and `x-openai-session` headers to select a per-chat server-side lease context. Both headers must be present; otherwise behavior fails closed to transport-session binding. Different chats never share a context. Normal browser calls still take no lease credential.
+- **Lifecycle**: `browser_release` clears the bound context; idle contexts are discarded after the lease and recovery windows. A broker restart still requires explicit recovery with the original credential and does not silently rebind.
 
 ### 1. Server-Side Pre-Binding (Security)
 

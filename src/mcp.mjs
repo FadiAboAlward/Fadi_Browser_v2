@@ -11,7 +11,7 @@ function resolveIdentity(boundContext) {
   return { clientId, leaseToken };
 }
 
-export function createBrokerMcpServer(backend, version = '0.1.0', preboundClientId = null) {
+export function createBrokerMcpServer(backend, version = '0.1.0', preboundClientId = null, taskContext = null) {
   const server = new McpServer({
     name: 'fadi-browser-v2',
     version
@@ -20,7 +20,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     instructions: 'Acquire an exclusive lease before browser operations. Once acquired, operations are bound to the session.'
   });
 
-  const boundContext = { clientId: null, leaseToken: null };
+  const boundContext = taskContext || { clientId: null, leaseToken: null };
 
   const clientIdSchema = preboundClientId 
     ? z.string().optional() 
