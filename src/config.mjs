@@ -69,6 +69,16 @@ export function loadConfig(options = {}) {
       }
       profile.profilePath = resolvedProfilePath;
     }
+    if (profile.externalChrome) {
+      const external = profile.externalChrome;
+      if (process.platform !== 'win32' || profile.mode !== 'profile_bound' || profile.headed !== true ||
+          !Number.isInteger(external.cdpPort) || external.cdpPort < 1024 || external.cdpPort > 65535 ||
+          [config.port, 8931, 8932, 8933, 8941, 8942, 8943].includes(external.cdpPort) ||
+          typeof external.executablePath !== 'string' || !external.executablePath.trim()) {
+        throw new BrokerError('CONFIG', 'INVALID_EXTERNAL_CHROME', `Auth profile ${id} has an invalid external Chrome configuration.`, undefined, 500);
+      }
+      external.executablePath = path.resolve(expandWindowsEnv(external.executablePath));
+    }
   }
 
   if (config.host !== '127.0.0.1' && config.host !== 'localhost' && config.host !== '::1') {

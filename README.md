@@ -121,6 +121,9 @@ Initial target: **5 concurrent isolated sessions**.
 - Stateful MCP transport sessions keep lease ownership server-side; routine browser tool schemas do not expose `lease_token` or `client_id`.
 - Strict bounded FIFO queue with cancellation, timeout, visible telemetry, and configurable per-client caps.
 - Portable identities use known-good restore validation; profile-bound identities require a dedicated V2-owned profile path and serialize access.
+- For the one-browser `goilot` proof, optional `externalChrome` attaches to an installed, visible Chrome on a dedicated loopback CDP port. Release frees the AI lease while leaving the Chrome window and persistent profile intact; subsequent acquire reattaches or starts Chrome with that same profile if the user closed it. Do not point another Chrome process at the same live profile. This option is Windows-only and does not change the shared broker or other client mappings.
+
+For this opt-in, set `authProfiles.goilot.headed: true`, `authProfiles.goilot.mode: "profile_bound"`, and `authProfiles.goilot.externalChrome` with `executablePath` (the installed `chrome.exe`) and an unused local `cdpPort` in the private runtime `config.json`. Never use the default personal Chrome user-data directory; V2 keeps the dedicated `auth\goilot` directory. The CDP port provides full local control of that browser, so use it only on a trusted machine and do not expose it beyond loopback.
 - Runtime root: `%LOCALAPPDATA%\FadiBrowserV2`.
 - SQLite: `%LOCALAPPDATA%\FadiBrowserV2\data\telemetry.sqlite`.
 - JSONL: `%LOCALAPPDATA%\FadiBrowserV2\logs\events.jsonl`.

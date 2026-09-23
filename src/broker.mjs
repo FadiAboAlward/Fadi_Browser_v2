@@ -154,6 +154,7 @@ export class LeaseBroker {
         persistenceWriter: lease.persistenceWriter,
         mode: profile?.mode || 'portable',
         profilePath: profile?.profilePath,
+        externalChrome: profile?.externalChrome,
         validation: profile?.validation,
         startUrl: profile?.validation?.startUrl,
         headed: profile?.headed ?? this.config.headed

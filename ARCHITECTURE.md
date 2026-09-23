@@ -201,6 +201,14 @@ Capacity uses a bounded strict-FIFO queue. A caller opts into a bounded wait on 
 
 Portable auth uses the pinned engine's `restore-save=auto` known-good behavior with optional URL/text/function validation. Profile-bound auth requires a dedicated path under the V2 runtime auth directory and is serialized; it is never silently downgraded to cookie-only restore.
 
+### Single external Chrome proof (`goilot`)
+
+The `goilot` profile may opt into `externalChrome` with an installed Chrome executable and a dedicated loopback CDP port. V2 starts that Chrome with its existing V2-owned persistent user-data directory only when no process already owns that profile, verifies that the CDP listener belongs to that executable/profile, and attaches agent-browser to the current tab without navigating it. External sessions use a dedicated agent-browser namespace so a previous engine-owned browser in the ordinary namespace cannot be reused instead of the CDP target. The browser is a normal visible, interactive Windows process, not owned by the agent-browser daemon.
+
+The broker still grants one exclusive lease for this profile. `browser_release` closes the agent-browser CDP session and frees the lease, but the externally owned Chrome window remains open with its profile state. A later acquire reattaches; if the user closed Chrome, V2 starts the installed executable with the same profile. A broker restart does not intentionally close this Chrome. No other client/profile mapping or pool policy changes in this one-browser proof.
+
+The CDP port grants local browser control, so it must listen on loopback only and be used on a trusted local machine. V2 refuses a mismatched listener or another process already using the profile; it never starts a second Chrome against that live directory. It uses the native `connect <port>` operation and does not repeat `--headed` on externally attached commands: doing so can change agent-browser's launch configuration and silently replace the CDP target with an engine-owned browser. Before a lease becomes ACTIVE, V2 compares the session's CDP target IDs against the configured Chrome port and fails closed on a mismatch. Google and Sentry authentication persistence still require real-client verification and are not implied by this mechanism alone.
+
 For the `goilot` identity, local configuration sets `authProfiles.goilot.headed: true`. The pinned engine receives its official `--headed` option for every command in that lease's session, so the browser opens on the interactive Windows desktop while retaining the same dedicated persistent profile path. Other auth profiles keep their existing launch mode. Release still closes the owned browser process and frees the pool slot; browser state remains in the profile for the next acquire. Visibility does not add a takeover, pause/resume, or shared-session coordination layer.
 
 ## Failure philosophy
