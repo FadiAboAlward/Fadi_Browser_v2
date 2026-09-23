@@ -201,6 +201,8 @@ Capacity uses a bounded strict-FIFO queue. A caller opts into a bounded wait on 
 
 Portable auth uses the pinned engine's `restore-save=auto` known-good behavior with optional URL/text/function validation. Profile-bound auth requires a dedicated path under the V2 runtime auth directory and is serialized; it is never silently downgraded to cookie-only restore.
 
+For the `goilot` identity, local configuration sets `authProfiles.goilot.headed: true`. The pinned engine receives its official `--headed` option for every command in that lease's session, so the browser opens on the interactive Windows desktop while retaining the same dedicated persistent profile path. Other auth profiles keep their existing launch mode. Release still closes the owned browser process and frees the pool slot; browser state remains in the profile for the next acquire. Visibility does not add a takeover, pause/resume, or shared-session coordination layer.
+
 ## Failure philosophy
 
 Ownership and isolation failures are more severe than ordinary navigation failures.

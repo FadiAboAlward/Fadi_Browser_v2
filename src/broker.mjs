@@ -156,7 +156,7 @@ export class LeaseBroker {
         profilePath: profile?.profilePath,
         validation: profile?.validation,
         startUrl: profile?.validation?.startUrl,
-        headed: Boolean(this.config.headed)
+        headed: profile?.headed ?? this.config.headed
       });
       lease.browserDiagnostics = created?.diagnostics || null;
       if (profile?.persistent) {
@@ -274,10 +274,11 @@ export class LeaseBroker {
     if (!lease.recoveryDeadline || Date.now() > Date.parse(lease.recoveryDeadline)) {
       throw new BrokerError('LEASE', 'RECOVERY_WINDOW_EXPIRED', 'The lease recovery window has expired.', undefined, 410);
     }
+    const profile = this.config.authProfiles[lease.authProfileId];
+    this.engine.setSessionHeaded?.(lease.sessionId, profile?.headed ?? this.config.headed);
     try {
       await this.engine.sessionInfo(lease.sessionId);
     } catch {
-      const profile = this.config.authProfiles[lease.authProfileId];
       const created = await this.engine.createSession(lease.sessionId, lease.authProfileId, {
         persistent: Boolean(profile?.persistent),
         persistenceWriter: lease.persistenceWriter,
@@ -285,7 +286,7 @@ export class LeaseBroker {
         profilePath: profile?.profilePath,
         validation: profile?.validation,
         startUrl: profile?.validation?.startUrl,
-        headed: Boolean(this.config.headed)
+        headed: profile?.headed ?? this.config.headed
       });
       lease.browserDiagnostics = created?.diagnostics || null;
       this.telemetry.event('session_restored', this.#eventContext(lease, { success: true }));

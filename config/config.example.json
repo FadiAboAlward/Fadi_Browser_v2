@@ -39,7 +39,8 @@
     },
     "goilot": {
       "persistent": true,
-      "mode": "profile_bound"
+      "mode": "profile_bound",
+      "headed": true
     },
     "goilot-claude": {
       "persistent": true,

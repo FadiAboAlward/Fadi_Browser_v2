@@ -47,6 +47,9 @@ export function loadConfig(options = {}) {
   };
 
   for (const [id, profile] of Object.entries(config.authProfiles)) {
+    if (profile.headed !== undefined && typeof profile.headed !== 'boolean') {
+      throw new BrokerError('CONFIG', 'INVALID_HEADED_MODE', `Auth profile ${id} must set headed to true or false.`, undefined, 500);
+    }
     profile.mode = profile.mode || 'portable';
     if (!['portable', 'profile_bound'].includes(profile.mode)) {
       throw new BrokerError('CONFIG', 'INVALID_AUTH_MODE', `Auth profile ${id} has an invalid mode.`, undefined, 500);

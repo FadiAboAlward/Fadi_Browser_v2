@@ -33,6 +33,7 @@ There are currently three user-facing AI clients configured in V2:
 - **App authentication**: ChatGPT app uses `No Auth`; the local tunnel supplies the broker credential through encrypted local configuration. The credential is never entered into ChatGPT or included in Git.
 - **Task binding**: ChatGPT issues a fresh MCP transport session for each tool call. For this endpoint only, the broker hashes the ingress-provided `x-openai-subject` and `x-openai-session` headers to select a per-chat server-side lease context. Both headers must be present; otherwise behavior fails closed to transport-session binding. Different chats never share a context. Normal browser calls still take no lease credential.
 - **Lifecycle**: `browser_release` clears the bound context; idle contexts are discarded after the lease and recovery windows. A broker restart still requires explicit recovery with the original credential and does not silently rebind.
+- **Visible browser**: Set only `authProfiles.goilot.headed` to `true` in the local V2 config. Goilot leases use the existing dedicated `%LOCALAPPDATA%\FadiBrowserV2\auth\goilot` profile with the official `agent-browser --headed` mode on the interactive desktop. The browser remains visible and manually usable while its lease is active; release closes the process but does not remove its profile or saved login state. No human-takeover or pause/resume protocol is involved.
 
 ### 1. Server-Side Pre-Binding (Security)
 

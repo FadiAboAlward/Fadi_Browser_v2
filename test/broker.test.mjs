@@ -7,8 +7,9 @@ import { LeaseBroker } from '../src/broker.mjs';
 import { Telemetry } from '../src/telemetry.mjs';
 
 class FakeEngine {
-  constructor() { this.sessions = new Map(); }
-  async createSession(sessionId) {
+  constructor() { this.sessions = new Map(); this.createdOptions = []; }
+  async createSession(sessionId, authProfileId, options) {
+    this.createdOptions.push({ authProfileId, options });
     this.sessions.set(sessionId, { url: 'about:blank', title: '' });
     return { ok: true, diagnostics: { executable: 'fake-chrome', process_id: 42, window_state: 'HIDDEN', visible: false, safe_window_id: 'pid-42', active_title: null } };
   }
@@ -20,6 +21,7 @@ class FakeEngine {
   async run(sessionId, args) { return { ok: true, output: { sessionId, args } }; }
   async closeSession(sessionId) { this.sessions.delete(sessionId); return { ok: true }; }
   async sessionInfo(sessionId) { if (!this.sessions.has(sessionId)) throw new Error('gone'); return { ok: true }; }
+  setSessionHeaded() {}
   async restoreWindow(sessionId) {
     if (!this.sessions.has(sessionId)) throw new Error('gone');
     return { executable: 'fake-chrome', process_id: 42, window_state: 'NORMAL', visible: true, safe_window_id: 'pid-42', active_title: null };
@@ -69,6 +71,23 @@ test('acquire_returns_single_active_lease', async () => {
     assert.equal(lease.status, 'ACTIVE');
     assert.equal(f.broker.activeCount(), 1);
     await f.broker.release({ clientId: 'maintenance', leaseToken: lease.lease_token });
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('profile_headed_override_applies_only_to_selected_identity', async () => {
+  const f = fixture();
+  try {
+    f.config.authProfiles['bound-profile'].headed = true;
+    const visible = await f.broker.acquire({ clientId: 'maintenance', authProfileId: 'bound-profile' });
+    assert.equal(f.engine.createdOptions.at(-1).options.headed, true);
+    await f.broker.release({ clientId: 'maintenance', leaseToken: visible.lease_token });
+    const ordinary = await f.broker.acquire({ clientId: 'maintenance', authProfileId: 'public' });
+    assert.equal(f.engine.createdOptions.at(-1).options.headed, undefined);
+    await f.broker.release({ clientId: 'maintenance', leaseToken: ordinary.lease_token });
   } finally {
     await f.broker.shutdown({ preserveRecoverable: true });
     f.telemetry.close();

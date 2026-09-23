@@ -7,6 +7,7 @@ export class AgentBrowserEngine {
     this.config = config;
     this.timeoutMs = options.timeoutMs || 60000;
     this.cliPath = options.cliPath || path.join(config.projectRoot, 'node_modules', 'agent-browser', 'bin', 'agent-browser.js');
+    this.sessionHeaded = new Map();
     this.environment = {
       ...process.env,
       AGENT_BROWSER_NAMESPACE: config.namespace,
@@ -24,6 +25,7 @@ export class AgentBrowserEngine {
   }
 
   async createSession(sessionId, authProfileId, options = {}) {
+    this.setSessionHeaded(sessionId, options.headed);
     const flags = ['--pin-tab'];
     if (options.mode === 'profile_bound') {
       if (!options.profilePath) {
@@ -39,7 +41,13 @@ export class AgentBrowserEngine {
       if (options.validation?.text) flags.push('--restore-check-text', options.validation.text);
       if (options.validation?.fn) flags.push('--restore-check-fn', options.validation.fn);
     }
-    const opened = await this.run(sessionId, ['open', options.startUrl || 'about:blank'], { flags, timeoutMs: 90000 });
+    let opened;
+    try {
+      opened = await this.run(sessionId, ['open', options.startUrl || 'about:blank'], { flags, timeoutMs: 90000 });
+    } catch (error) {
+      this.sessionHeaded.delete(sessionId);
+      throw error;
+    }
     const diagnostics = await this.windowDiagnostics(sessionId).catch(() => ({
       executable: 'chromium',
       process_id: null,
@@ -81,7 +89,13 @@ export class AgentBrowserEngine {
   }
 
   async closeSession(sessionId) {
-    return this.run(sessionId, ['close'], { timeoutMs: 30000 });
+    const result = await this.run(sessionId, ['close'], { timeoutMs: 30000 });
+    this.sessionHeaded.delete(sessionId);
+    return result;
+  }
+
+  setSessionHeaded(sessionId, headed) {
+    this.sessionHeaded.set(sessionId, headed === true);
   }
 
   async sessionInfo(sessionId) {
@@ -93,7 +107,7 @@ export class AgentBrowserEngine {
     const data = info?.output?.data || info?.output || {};
     const runtime = data.runtime && typeof data.runtime === 'object' ? data.runtime : {};
     const processId = Number(data.pid || runtime.pid) || null;
-    const configuredHeaded = this.config.headed ?? process.env.AGENT_BROWSER_HEADED;
+    const configuredHeaded = this.sessionHeaded.get(sessionId) ?? this.config.headed ?? process.env.AGENT_BROWSER_HEADED;
     const headed = configuredHeaded === true || configuredHeaded === '1' || configuredHeaded === 'true';
     return {
       executable: path.basename(String(runtime.executablePath || runtime.executable || 'chromium')),
@@ -123,7 +137,7 @@ export class AgentBrowserEngine {
   }
 
   async run(sessionId, args, options = {}) {
-    const globalArgs = ['--session', sessionId, '--namespace', this.config.namespace, '--json', ...(options.flags || [])];
+    const globalArgs = ['--session', sessionId, '--namespace', this.config.namespace, '--json', ...(this.sessionHeaded.get(sessionId) ? ['--headed'] : []), ...(options.flags || [])];
     return this.#runRaw([...globalArgs, ...args], { sessionId, timeoutMs: options.timeoutMs, input: options.input });
   }
 
