@@ -32,6 +32,7 @@ export class LeaseQueue {
         id,
         clientId: request.clientId,
         authProfileId: request.authProfileId,
+        poolId: request.poolId || null,
         taskLabel: request.taskLabel,
         enqueuedAt: Date.now(),
         initialPosition: this.entries.length + 1,

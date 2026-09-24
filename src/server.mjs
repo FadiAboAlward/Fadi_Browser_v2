@@ -63,7 +63,7 @@ const httpServer = createServer(async (req, res) => {
 
 async function routeApi(route, body) {
   switch (route) {
-    case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, taskLabel: body.task_label, waitTimeoutMs: body.wait_timeout_ms });
+    case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, poolId: body.pool_id, taskLabel: body.task_label, waitTimeoutMs: body.wait_timeout_ms });
     case '/v1/status': return broker.status({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/recover': return broker.recover({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/release': return broker.release({ clientId: body.client_id, leaseToken: body.lease_token });

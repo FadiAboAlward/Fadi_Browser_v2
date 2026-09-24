@@ -26,9 +26,10 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     ? z.string().optional() 
     : z.string().min(1);
 
-  register(server, 'browser_acquire', 'Allocate one isolated browser session under local client/auth policy.', z.object({
+  register(server, 'browser_acquire', 'Allocate a free shared browser slot, or a legacy authorized auth profile when explicitly requested.', z.object({
     client_id: clientIdSchema,
     auth_profile_id: z.string().min(1).optional(),
+    pool_id: z.string().min(1).optional(),
     task_label: z.string().max(80).optional(),
     wait: z.boolean().optional(),
     wait_timeout_ms: z.number().int().min(1000).max(300000).optional()
@@ -40,7 +41,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     }
 
     const waitTimeoutMs = args.wait === false ? 0 : (args.wait_timeout_ms || 30000);
-    const result = await backend.acquire({ clientId: actualClientId, authProfileId: args.auth_profile_id, taskLabel: args.task_label, waitTimeoutMs, signal: extra?.signal });
+    const result = await backend.acquire({ clientId: actualClientId, authProfileId: args.auth_profile_id, poolId: args.pool_id, taskLabel: args.task_label, waitTimeoutMs, signal: extra?.signal });
     boundContext.clientId = actualClientId;
     boundContext.leaseToken = result.lease_token;
     const { lease_token: recoveryCredential, ...publicResult } = result;

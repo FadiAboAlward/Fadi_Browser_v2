@@ -35,6 +35,16 @@ test('same_task_actions_resolve_server_side_lease', async () => {
   assert.deepEqual(calls.at(-1)[1], { clientId: 'client-a', leaseToken: 'r'.repeat(64), url: 'https://example.com' });
 });
 
+test('browser_acquire exposes optional pool without letting the caller choose a slot', async () => {
+  const { server, calls } = fixture();
+  const properties = server._toolInputSchemaJson.browser_acquire.properties;
+  assert.ok('pool_id' in properties);
+  assert.equal('browser_slot_id' in properties, false);
+  await call(server, 'browser_acquire', { client_id: 'client-a', pool_id: 'default' });
+  assert.equal(calls.at(-1)[1].poolId, 'default');
+  assert.equal(calls.at(-1)[1].authProfileId, undefined);
+});
+
 test('no_public_credential_needed_for_browser_action', async () => {
   const { server } = fixture();
   const ordinary = ['browser_status', 'browser_release', 'browser_navigate', 'browser_snapshot', 'browser_get_url', 'browser_get_title', 'browser_evaluate', 'browser_command', 'browser_restore_window'];

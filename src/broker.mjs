@@ -32,6 +32,7 @@ export class LeaseBroker {
         tokenHash: row.token_hash,
         clientId: row.client_id,
         authProfileId: row.auth_profile_id,
+        ...this.#poolMembership(row.auth_profile_id),
         sessionId: row.session_id,
         createdAt: row.created_at,
         lastActivity: row.last_activity,
@@ -52,9 +53,10 @@ export class LeaseBroker {
     return [...this.leases.values()].filter(lease => CAPACITY_STATUSES.has(lease.status)).length;
   }
 
-  async acquire({ clientId, authProfileId, taskLabel, waitTimeoutMs, signal, _queueWaitMs = 0, _fromQueue = false }) {
+  async acquire({ clientId, authProfileId, poolId, taskLabel, waitTimeoutMs, signal, _queueWaitMs = 0, _fromQueue = false }) {
     const started = performance.now();
-    const resolvedProfile = this.#resolvePolicy(clientId, authProfileId);
+    const selected = this.#resolvePolicy(clientId, authProfileId, poolId);
+    const resolvedProfile = selected.authProfileId;
     if (_queueWaitMs === 0) {
       this.telemetry.event('session_requested', {
         clientId,
@@ -67,10 +69,11 @@ export class LeaseBroker {
 
     const clientActive = this.#clientActiveCount(clientId);
     const maxClient = this.config.maxSessionsPerClient ?? 3;
-    const profileBusy = this.#isProfileBusy(resolvedProfile);
+    const profileBusy = resolvedProfile ? this.#isProfileBusy(resolvedProfile) : false;
+    const poolBusy = Boolean(selected.pooled && !resolvedProfile);
     const blocked = this.activeCount() >= this.config.maxConcurrentSessions
       || clientActive >= maxClient
-      || profileBusy;
+      || profileBusy || poolBusy;
 
     if (blocked) {
       if (_fromQueue) {
@@ -79,7 +82,7 @@ export class LeaseBroker {
       // Only queue when caller explicitly opts in with waitTimeoutMs > 0
       if (waitTimeoutMs > 0) {
         try {
-          const queued = this.queue.enqueue({ clientId, authProfileId: resolvedProfile, taskLabel, waitTimeoutMs, signal });
+          const queued = this.queue.enqueue({ clientId, authProfileId: selected.pooled ? null : resolvedProfile, poolId: selected.pooled ? selected.poolId : null, taskLabel, waitTimeoutMs, signal });
           return await queued.promise;
         } catch (error) {
           this.telemetry.event('tool_failed', {
@@ -96,10 +99,12 @@ export class LeaseBroker {
         }
       }
       // Immediate rejection with the most specific error
-      const rejectCode = profileBusy ? 'AUTH_PROFILE_BUSY'
+      const rejectCode = poolBusy ? 'POOL_EXHAUSTED'
+        : profileBusy ? 'AUTH_PROFILE_BUSY'
         : clientActive >= maxClient ? 'PER_CLIENT_LIMIT'
         : 'CAPACITY_EXHAUSTED';
-      const rejectMsg = profileBusy ? 'The requested profile is bound and currently in use.'
+      const rejectMsg = poolBusy ? 'All persistent browser slots in the requested pool are in use.'
+        : profileBusy ? 'The requested profile is bound and currently in use.'
         : clientActive >= maxClient ? `Client already has ${clientActive} active sessions (limit: ${maxClient}).`
         : 'All configured V2 session slots are in use.';
       this.telemetry.event('tool_failed', {
@@ -118,7 +123,7 @@ export class LeaseBroker {
         client_active: clientActive,
         client_limit: maxClient,
         queue_wait_ms: _queueWaitMs
-      }, profileBusy ? 409 : 429);
+      }, profileBusy || poolBusy ? 409 : 429);
     }
 
     const leaseToken = newOpaqueToken();
@@ -127,6 +132,8 @@ export class LeaseBroker {
       tokenHash: sha256(leaseToken),
       clientId,
       authProfileId: resolvedProfile,
+      poolId: selected.poolId,
+      browserSlotId: selected.browserSlotId,
       sessionId: `v2-${randomUUID().replaceAll('-', '')}`,
       createdAt: nowIso(),
       lastActivity: nowIso(),
@@ -194,6 +201,8 @@ export class LeaseBroker {
         session_id: lease.sessionId,
         client_id: lease.clientId,
         auth_profile_id: lease.authProfileId,
+        pool_id: lease.poolId,
+        browser_slot_id: lease.browserSlotId,
         created_at: lease.createdAt,
         last_activity: lease.lastActivity,
         status: lease.status,
@@ -238,6 +247,9 @@ export class LeaseBroker {
       known_good_policy: profile.mode === 'portable' && profile.persistent ? 'engine_auto_validation' : null,
       active_sessions: [...this.leases.values()].filter(lease => lease.authProfileId === id && CAPACITY_STATUSES.has(lease.status)).length
     }]));
+    const browserPools = Object.fromEntries(Object.entries(this.config.browserPools || {}).map(([id, pool]) => [id, {
+      slots: pool.slots.map(slot => ({ browser_slot_id: slot.id, state: this.#isProfileBusy(slot.authProfileId) ? 'BUSY' : 'FREE' }))
+    }]));
     return {
       broker: 'HEALTHY',
       mcp: 'HEALTHY',
@@ -246,6 +258,7 @@ export class LeaseBroker {
       sessions_queued: this.queue.length,
       concurrency_limit: this.config.maxConcurrentSessions,
       auth_profiles: authProfiles,
+      browser_pools: browserPools,
       recent_crash: this.recentCrash,
       resource_pressure: this.resourcePressure,
       project_version: this.versions.brokerVersion || 'unknown',
@@ -285,6 +298,7 @@ export class LeaseBroker {
         persistenceWriter: lease.persistenceWriter,
         mode: profile?.mode || 'portable',
         profilePath: profile?.profilePath,
+        externalChrome: profile?.externalChrome,
         validation: profile?.validation,
         startUrl: profile?.validation?.startUrl,
         headed: profile?.headed ?? this.config.headed
@@ -478,12 +492,26 @@ export class LeaseBroker {
     }
   }
 
-  #resolvePolicy(clientId, requestedProfile) {
+  #resolvePolicy(clientId, requestedProfile, requestedPool) {
     if (!clientId || !this.config.clients[clientId]) {
       this.telemetry.event('policy_denied', { clientId, authProfileId: requestedProfile, success: false, errorCategory: 'POLICY', errorCode: 'UNKNOWN_CLIENT' });
       throw new BrokerError('POLICY', 'UNKNOWN_CLIENT', 'Client is not configured in local policy.', undefined, 403);
     }
     const policy = this.config.clients[clientId];
+    if (requestedProfile && requestedPool) {
+      throw new BrokerError('POLICY', 'AMBIGUOUS_ACQUIRE_TARGET', 'Specify a pool or a legacy auth profile, not both.', undefined, 400);
+    }
+    const poolId = requestedPool || (!requestedProfile ? policy.defaultPool : null);
+    if (poolId) {
+      const pool = this.config.browserPools?.[poolId];
+      if (!pool) throw new BrokerError('POLICY', 'POOL_UNAVAILABLE', 'The requested browser pool is not configured.', undefined, 404);
+      if (!policy.allowedPools?.includes(poolId)) {
+        this.telemetry.event('policy_denied', { clientId, success: false, errorCategory: 'POLICY', errorCode: 'POOL_DENIED' });
+        throw new BrokerError('POLICY', 'POOL_DENIED', 'Client is not allowed to use the requested browser pool.', undefined, 403);
+      }
+      const slot = this.#freePoolSlot(poolId);
+      return { authProfileId: slot?.authProfileId || null, poolId, browserSlotId: slot?.id || null, pooled: true };
+    }
     const profile = requestedProfile || policy.defaultAuthProfile;
     if (!profile || !this.config.authProfiles[profile]) {
       throw new BrokerError('AUTH', 'AUTH_PROFILE_UNAVAILABLE', 'The requested/default auth profile is not configured.', undefined, 403);
@@ -492,7 +520,19 @@ export class LeaseBroker {
       this.telemetry.event('policy_denied', { clientId, authProfileId: profile, success: false, errorCategory: 'POLICY', errorCode: 'AUTH_PROFILE_DENIED' });
       throw new BrokerError('POLICY', 'AUTH_PROFILE_DENIED', 'Client is not allowed to use the requested auth profile.', undefined, 403);
     }
-    return profile;
+    return { authProfileId: profile, ...this.#poolMembership(profile), pooled: false };
+  }
+
+  #freePoolSlot(poolId) {
+    return this.config.browserPools[poolId].slots.find(slot => !this.#isProfileBusy(slot.authProfileId)) || null;
+  }
+
+  #poolMembership(authProfileId) {
+    for (const [poolId, pool] of Object.entries(this.config.browserPools || {})) {
+      const slot = pool.slots.find(item => item.authProfileId === authProfileId);
+      if (slot) return { poolId, browserSlotId: slot.id };
+    }
+    return { poolId: null, browserSlotId: null };
   }
 
   async #pumpQueue() {
@@ -503,7 +543,7 @@ export class LeaseBroker {
         const entry = this.queue.takeHead(head => {
           const clientActive = this.#clientActiveCount(head.clientId);
           const maxClient = this.config.maxSessionsPerClient ?? 3;
-          return clientActive < maxClient && !this.#isProfileBusy(head.authProfileId);
+          return clientActive < maxClient && (head.poolId ? Boolean(this.#freePoolSlot(head.poolId)) : !this.#isProfileBusy(head.authProfileId));
         });
         // Strict FIFO: an ineligible head is never bypassed by a later request.
         if (!entry) break;
@@ -511,7 +551,8 @@ export class LeaseBroker {
         try {
           const lease = await this.acquire({
             clientId: entry.clientId,
-            authProfileId: entry.authProfileId,
+            authProfileId: entry.poolId ? undefined : entry.authProfileId,
+            poolId: entry.poolId,
             taskLabel: entry.taskLabel,
             waitTimeoutMs: 0,
             _queueWaitMs: queueWaitMs,
@@ -585,6 +626,8 @@ export class LeaseBroker {
       lease_id: lease.leaseId,
       client_id: lease.clientId,
       auth_profile_id: lease.authProfileId,
+      pool_id: lease.poolId,
+      browser_slot_id: lease.browserSlotId,
       session_id: lease.sessionId,
       created_at: lease.createdAt,
       last_activity: lease.lastActivity,

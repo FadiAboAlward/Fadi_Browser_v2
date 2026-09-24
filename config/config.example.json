@@ -10,6 +10,7 @@
   "leaseTtlMs": 300000,
   "recoveryWindowMs": 120000,
   "retentionDays": 30,
+  "browserPools": {},
   "clients": {
     "fadi-gpt": {
       "defaultAuthProfile": "fadi",

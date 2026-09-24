@@ -42,6 +42,7 @@ function mapInput(input) {
     ['clientId', 'client_id'],
     ['leaseToken', 'lease_token'],
     ['authProfileId', 'auth_profile_id'],
+    ['poolId', 'pool_id'],
     ['taskLabel', 'task_label'],
     ['waitTimeoutMs', 'wait_timeout_ms'],
     ['queueId', 'queue_id']

@@ -209,7 +209,13 @@ The broker still grants one exclusive lease for this profile. `browser_release` 
 
 The CDP port grants local browser control, so it must listen on loopback only and be used on a trusted local machine. V2 refuses a mismatched listener or another process already using the profile; it never starts a second Chrome against that live directory. It uses the native `connect <port>` operation and does not repeat `--headed` on externally attached commands: doing so can change agent-browser's launch configuration and silently replace the CDP target with an engine-owned browser. Before a lease becomes ACTIVE, V2 compares the session's CDP target IDs against the configured Chrome port and fails closed on a mismatch. Google and Sentry authentication persistence still require real-client verification and are not implied by this mechanism alone.
 
-For the `goilot` identity, local configuration sets `authProfiles.goilot.headed: true`. The pinned engine receives its official `--headed` option for every command in that lease's session, so the browser opens on the interactive Windows desktop while retaining the same dedicated persistent profile path. Other auth profiles keep their existing launch mode. Release still closes the owned browser process and frees the pool slot; browser state remains in the profile for the next acquire. Visibility does not add a takeover, pause/resume, or shared-session coordination layer.
+### Shared persistent browser slots
+
+An optional `browserPools.default.slots` list maps slot aliases such as `browser-1` and `browser-2` to distinct profile-bound auth identities. Client policy grants `allowedPools` separately from legacy `allowedAuthProfiles`; `defaultPool` opts a client into no-argument shared allocation without silently changing other clients' defaults. The broker chooses the first free slot and returns its safe `browser_slot_id`. The client cannot select an arbitrary slot through the shared flow. Its trusted `client_id` and exclusive lease remain unchanged.
+
+Each slot uses a unique persistent user-data directory and loopback CDP port with installed, visible, interactive Chrome. The same profile is never acquired concurrently. A legacy explicit `auth_profile_id` request retains its previous allowlist, and occupying that profile also makes its pool slot busy. A pooled grant does not grant direct access to another auth profile. Strict FIFO waits re-evaluate the first free slot at promotion rather than pinning a busy profile when the request joins the queue.
+
+The first local two-slot rollout aliases `browser-1` to the already verified `goilot` profile and creates a new, independently authenticated `browser-2` profile. It does not copy cookies or logins between them. The global broker cap remains separate from the number of configured persistent slots; adding further slots requires separate validation. Visibility does not add takeover, pause/resume, or shared-session coordination.
 
 ## Failure philosophy
 

@@ -1,6 +1,6 @@
 # Client Integration Architecture
 
-Fadi Browser V2 uses a strict server-side pre-binding model to securely associate AI clients with their designated persistent browser sessions (auth profiles) without passing sensitive credentials over the MCP protocol.
+Fadi Browser V2 uses strict server-side pre-binding for AI client identity. An optional shared browser pool lets an authorized client lease a free persistent browser slot without changing that identity or passing sensitive credentials over MCP.
 
 ## Registered Clients
 
@@ -18,7 +18,7 @@ There are currently three user-facing AI clients configured in V2:
 - **Environment**: Claude Desktop (`%APPDATA%\Claude\claude_desktop_config.json`)
 - **Transport**: Stdio
 - **Entrypoint**: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Users\Fadi\OneDrive\Documents\GitHub\Fadi_Browser_v2\scripts\mcp-stdio.ps1 -ClientId goilot-claude`
-- **Status**: ✅ **Registered & Active**.
+- **Status**: Registered. The independently pre-bound `goilot-claude` MCP path and stdio implementation passed local invocation; Claude Desktop UI invocation was not part of the two-slot trial.
 
 **Fadi GPT**:
 - **Environment**: ChatGPT (OpenAI Platform)
@@ -45,7 +45,17 @@ Instead, the client ID is **pre-bound server-side** at the transport layer:
 
 If the incoming MCP tool invocation provides a `client_id` that does not match the pre-bound transport ID, the request is actively rejected with an `Impersonation blocked` error.
 
-### 2. Adding or Rotating Clients
+### 2. Shared pool routing and legacy migration
+
+Set `browserPools.default.slots` in the private V2 config to ordered `{ "id": "browser-1", "authProfileId": "goilot" }`-style mappings. Every mapped auth profile must be persistent, `profile_bound`, headed, and configured for a separate installed Chrome user-data directory and loopback CDP port. Grant each participating client `allowedPools: ["default"]`; set `defaultPool: "default"` only for clients whose no-argument acquire should enter the pool. Keep its original `defaultAuthProfile` and `allowedAuthProfiles` for explicit legacy requests. Pool access alone does not authorize `auth_profile_id` for another identity.
+
+For a client with `defaultPool`, `browser_acquire()` selects the first free slot in that pool; `browser_acquire(pool_id="default")` selects it explicitly for any client allowed there. A client without `defaultPool` retains its legacy no-argument default. The response includes `browser_slot_id` and `pool_id`. A client cannot choose a slot ID. `browser_acquire(auth_profile_id="goilot")` remains an explicit legacy request and uses the original allowlist. `pool_id` and `auth_profile_id` cannot be supplied together. Profile-bound exclusivity also applies across pooled and explicit legacy calls. If both slots are busy, use the existing bounded FIFO wait; release leaves the installed Chrome and its auth state intact.
+
+The first two-slot trial keeps `goilot` as the backing identity for `browser-1` and gives `browser-2` its own fresh profile. A login in one slot is not automatically present in the other. No V1 profile, connector credential, or tunnel is reused for a browser slot.
+
+On 24 Sep 2026, the local two-slot trial used Alex ChatGPT → Goilot GPT for Client A and an independent pre-bound `goilot-claude` MCP client for Client B. Both held active leases simultaneously on separate installed Chrome processes/profile directories; release of A left B active, and releasing B returned both slots to FREE with 0 active and 0 queued. A follow-up acquire reattached to the same persistent Chrome processes. The fresh `browser-2` profile showed Sentry's login state; this is expected until that slot is authenticated separately. This test does not claim Claude Desktop UI invocation or a five-slot rollout.
+
+### 3. Adding or Rotating Clients
 
 To add a new client or rotate configurations:
 1. Update `config/config.json` under `clients` to add the new `client_id` and map its `defaultAuthProfile` and `allowedAuthProfiles`.
