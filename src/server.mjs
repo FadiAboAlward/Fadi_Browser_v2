@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -8,6 +8,7 @@ import { AgentBrowserEngine } from './engine.mjs';
 import { LeaseBroker } from './broker.mjs';
 import { BrokerError, asBrokerError } from './errors.mjs';
 import { createBrokerMcpServer } from './mcp.mjs';
+import { chatgptTaskKey } from './chatgpt-task-key.mjs';
 import { Telemetry, telemetryPaths } from './telemetry.mjs';
 import { nowIso } from './util.mjs';
 
@@ -31,7 +32,7 @@ const telemetry = new Telemetry(config, versions);
 const engine = new AgentBrowserEngine(config);
 const broker = new LeaseBroker(config, telemetry, engine, versions);
 const mcpSessions = new Map();
-const goilotTaskContexts = new Map();
+const chatgptTaskContexts = new Map();
 const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();
 
@@ -89,8 +90,8 @@ async function routeApi(route, body) {
 
 async function handleMcpRequest(req, res, preboundClientId = null) {
   // ChatGPT's tunnel creates a fresh MCP transport session for each tool call.
-  // Its stable, ingress-provided chat identity is the task boundary for Goilot only.
-  const taskKey = goilotTaskKey(req, preboundClientId);
+  // Its stable, ingress-provided chat identity is the task boundary for each ChatGPT client.
+  const taskKey = chatgptTaskKey(req.headers, preboundClientId);
   const requestedSessionId = String(req.headers['mcp-session-id'] || '');
   if (requestedSessionId) {
     const existing = mcpSessions.get(requestedSessionId);
@@ -106,13 +107,13 @@ async function handleMcpRequest(req, res, preboundClientId = null) {
   let taskContext = null;
   if (taskKey) {
     const now = Date.now();
-    for (const [key, entry] of goilotTaskContexts) {
-      if (now - entry.lastSeen > config.leaseTtlMs + config.recoveryWindowMs + 60000) goilotTaskContexts.delete(key);
+    for (const [key, entry] of chatgptTaskContexts) {
+      if (now - entry.lastSeen > config.leaseTtlMs + config.recoveryWindowMs + 60000) chatgptTaskContexts.delete(key);
     }
-    let entry = goilotTaskContexts.get(taskKey);
+    let entry = chatgptTaskContexts.get(taskKey);
     if (!entry) {
       entry = { context: { clientId: null, leaseToken: null }, lastSeen: now };
-      goilotTaskContexts.set(taskKey, entry);
+      chatgptTaskContexts.set(taskKey, entry);
     }
     entry.lastSeen = now;
     taskContext = entry.context;
@@ -130,14 +131,6 @@ async function handleMcpRequest(req, res, preboundClientId = null) {
   };
   await server.connect(transport);
   await transport.handleRequest(req, res);
-}
-
-function goilotTaskKey(req, preboundClientId) {
-  if (preboundClientId !== 'goilot-gpt') return null;
-  const session = req.headers['x-openai-session'];
-  const subject = req.headers['x-openai-subject'];
-  if (typeof session !== 'string' || typeof subject !== 'string' || !session || !subject || session.length > 1024 || subject.length > 1024) return null;
-  return createHash('sha256').update(`${subject.length}:${subject}${session.length}:${session}`).digest('hex');
 }
 
 function requireAuthorization(req) {
