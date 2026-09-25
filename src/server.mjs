@@ -2,7 +2,8 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { localhostHostValidation, localhostOriginValidation, NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from '@modelcontextprotocol/node';
+import { createMcpHandler } from '@modelcontextprotocol/server';
 import { loadConfig } from './config.mjs';
 import { AgentBrowserEngine } from './engine.mjs';
 import { LeaseBroker } from './broker.mjs';
@@ -30,7 +31,33 @@ if (!process.env.AGENT_BROWSER_ENCRYPTION_KEY || !/^[a-fA-F0-9]{64}$/.test(proce
 const telemetry = new Telemetry(config, versions);
 const engine = new AgentBrowserEngine(config);
 const broker = new LeaseBroker(config, telemetry, engine, versions);
-const mcpSessions = new Map();
+
+const chatgptTaskContexts = new Map();
+
+const mcpHandler = createMcpHandler(async (ctx) => {
+  const url = new URL(ctx.requestInfo.url);
+  const parts = url.pathname.split('/');
+  const preboundClientId = parts.length > 2 && parts[2] ? parts[2] : null;
+
+  let taskContext = undefined;
+  const subject = ctx.requestInfo.headers.get('x-openai-subject');
+  const session = ctx.requestInfo.headers.get('x-openai-session');
+  
+  if (subject || session) {
+    const chatgptTaskKey = `${preboundClientId || 'none'}:${subject || ''}:${session || ''}`;
+    if (!chatgptTaskContexts.has(chatgptTaskKey)) {
+      chatgptTaskContexts.set(chatgptTaskKey, { clientId: null, leaseToken: null });
+    }
+    taskContext = chatgptTaskContexts.get(chatgptTaskKey);
+  }
+
+  return createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId, taskContext);
+});
+
+const nodeMcpHandler = toNodeHandler(mcpHandler, {
+  onerror: error => { console.error('MCP ERR', error); telemetry.event('tool_failed', { operation: 'mcp_transport', success: false, errorCategory: 'MCP_TRANSPORT', errorCode: 'MCP_ADAPTER_ERROR', metadata: { message: error?.message } }); }
+});
+
 const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();
 
@@ -46,7 +73,7 @@ const httpServer = createServer(async (req, res) => {
       requireAuthorization(req);
       const parts = url.pathname.split('/');
       const preboundClientId = parts.length > 2 && parts[2] ? parts[2] : null;
-      await handleMcpRequest(req, res, preboundClientId);
+      await nodeMcpHandler(req, res);
       return;
     }
     if (req.method !== 'POST') return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'NOT_FOUND', message: 'Route not found.' } });
@@ -91,31 +118,6 @@ async function routeApi(route, body) {
     }
     default: throw new BrokerError('MCP_TRANSPORT', 'NOT_FOUND', 'Route not found.', undefined, 404);
   }
-}
-
-async function handleMcpRequest(req, res, preboundClientId = null) {
-  const requestedSessionId = String(req.headers['mcp-session-id'] || '');
-  if (requestedSessionId) {
-    const existing = mcpSessions.get(requestedSessionId);
-    if (!existing) return sendJson(res, 404, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_NOT_FOUND', message: 'MCP session is unknown or closed.' } });
-    await existing.transport.handleRequest(req, res);
-    return;
-  }
-  if (req.method !== 'POST') return sendJson(res, 400, { error: { category: 'MCP_TRANSPORT', code: 'MCP_SESSION_REQUIRED', message: 'Initialize an MCP session first.' } });
-
-  const server = createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId);
-  const transport = new NodeStreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-    onsessioninitialized: sessionId => mcpSessions.set(sessionId, { server, transport })
-  });
-  transport.onerror = error => telemetry.event('tool_failed', {
-    operation: 'mcp_transport', success: false, errorCategory: 'MCP_TRANSPORT', errorCode: 'MCP_ADAPTER_ERROR', metadata: { message: error.message }
-  });
-  transport.onclose = () => {
-    if (transport.sessionId) mcpSessions.delete(transport.sessionId);
-  };
-  await server.connect(transport);
-  await transport.handleRequest(req, res);
 }
 
 function requireAuthorization(req) {
@@ -175,11 +177,7 @@ async function shutdown(preserveRecoverable) {
   if (!shuttingDown) shuttingDown = true;
   httpServer.close();
   try { await broker.shutdown({ preserveRecoverable }); } finally {
-    await Promise.all([...mcpSessions.values()].map(async ({ server, transport }) => {
-      await transport.close().catch(() => {});
-      await server.close?.().catch(() => {});
-    }));
-    mcpSessions.clear();
+    await mcpHandler.close?.();
     telemetry.close();
     rmSync(config.paths.runningMarker, { force: true });
     process.exit(0);
@@ -202,3 +200,7 @@ httpServer.listen(config.port, config.host, () => {
   writeRunningState();
   telemetry.event('health_check', { success: true, concurrencyCount: broker.activeCount(), metadata: { endpoint: `http://${config.host}:${config.port}` } });
 });
+
+
+
+

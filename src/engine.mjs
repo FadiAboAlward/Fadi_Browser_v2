@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { BrokerError } from './errors.mjs';
 
@@ -7,6 +8,11 @@ export class AgentBrowserEngine {
     this.config = config;
     this.timeoutMs = options.timeoutMs || 60000;
     this.cliPath = options.cliPath || path.join(config.projectRoot, 'node_modules', 'agent-browser', 'bin', 'agent-browser.js');
+    this.sessionHeaded = new Map();
+    this.sessionNamespaces = new Map();
+    this.externalSessions = new Map();
+    this.ensureExternalChrome = options.ensureExternalChrome || ensureExternalChrome;
+    this.inspectExternalChrome = options.inspectExternalChrome || inspectExternalChrome;
     this.environment = {
       ...process.env,
       AGENT_BROWSER_NAMESPACE: config.namespace,
@@ -24,8 +30,23 @@ export class AgentBrowserEngine {
   }
 
   async createSession(sessionId, authProfileId, options = {}) {
+    this.setSessionHeaded(sessionId, options.headed);
     const flags = ['--pin-tab'];
-    if (options.mode === 'profile_bound') {
+    if (options.externalChrome) {
+      if (options.mode !== 'profile_bound' || !options.profilePath || !options.headed) {
+        throw new BrokerError('CONFIG', 'INVALID_EXTERNAL_CHROME', 'External Chrome requires a headed, profile-bound identity.', undefined, 500);
+      }
+      try {
+        await this.ensureExternalChrome(options.externalChrome, options.profilePath);
+      } catch (error) {
+        this.sessionHeaded.delete(sessionId);
+        throw error;
+      }
+      // agent-browser keeps browser launch state per namespace. Do not attach an
+      // external profile through the namespace used by engine-owned sessions.
+      this.sessionNamespaces.set(sessionId, `${this.config.namespace}-${authProfileId}-external-cdp`);
+      this.externalSessions.set(sessionId, { ...options.externalChrome, profilePath: options.profilePath });
+    } else if (options.mode === 'profile_bound') {
       if (!options.profilePath) {
         throw new BrokerError('AUTH', 'PROFILE_PATH_REQUIRED', 'A profile-bound identity requires a dedicated V2 profile path.', undefined, 500);
       }
@@ -39,7 +60,23 @@ export class AgentBrowserEngine {
       if (options.validation?.text) flags.push('--restore-check-text', options.validation.text);
       if (options.validation?.fn) flags.push('--restore-check-fn', options.validation.fn);
     }
-    const opened = await this.run(sessionId, ['open', options.startUrl || 'about:blank'], { flags, timeoutMs: 90000 });
+    let opened;
+    try {
+      // Attaching must not replace the human's current page with about:blank.
+      if (options.externalChrome) {
+        await this.run(sessionId, ['connect', String(options.externalChrome.cdpPort)], { flags, timeoutMs: 90000 });
+        await this.#verifyExternalTargets(sessionId, options.externalChrome.cdpPort);
+        opened = await this.getUrl(sessionId);
+      } else {
+        opened = await this.run(sessionId, ['open', options.startUrl || 'about:blank'], { flags, timeoutMs: 90000 });
+      }
+    } catch (error) {
+      if (options.externalChrome) await this.run(sessionId, ['close'], { timeoutMs: 30000 }).catch(() => {});
+      this.sessionHeaded.delete(sessionId);
+      this.sessionNamespaces.delete(sessionId);
+      this.externalSessions.delete(sessionId);
+      throw error;
+    }
     const diagnostics = await this.windowDiagnostics(sessionId).catch(() => ({
       executable: 'chromium',
       process_id: null,
@@ -80,7 +117,7 @@ export class AgentBrowserEngine {
     return this.run(sessionId, ['eval', '-b', encoded]);
   }
 
-  async screenshot(sessionId, options = {}) {
+async screenshot(sessionId, options = {}) {
     const args = ['screenshot'];
     if (options.fullPage) args.push('--full');
     return this.run(sessionId, args);
@@ -128,8 +165,16 @@ export class AgentBrowserEngine {
     return this.run(sessionId, args, { timeoutMs });
   }
 
-  async closeSession(sessionId) {
-    return this.run(sessionId, ['close'], { timeoutMs: 30000 });
+    async closeSession(sessionId) {
+    const result = await this.run(sessionId, ['close'], { timeoutMs: 30000 });
+    this.sessionHeaded.delete(sessionId);
+    this.sessionNamespaces.delete(sessionId);
+    this.externalSessions.delete(sessionId);
+    return result;
+  }
+
+  setSessionHeaded(sessionId, headed) {
+    this.sessionHeaded.set(sessionId, headed === true);
   }
 
   async sessionInfo(sessionId) {
@@ -137,11 +182,24 @@ export class AgentBrowserEngine {
   }
 
   async windowDiagnostics(sessionId) {
+    const external = this.externalSessions.get(sessionId);
+    if (external) {
+      const state = await this.inspectExternalChrome(external, external.profilePath);
+      if (!state.owned) throw new BrokerError('SESSION', 'EXTERNAL_CHROME_LOST', 'The dedicated Chrome process is no longer attached to its expected local CDP port.', undefined, 409);
+      return {
+        executable: path.basename(external.executablePath),
+        process_id: state.portOwner,
+        window_state: state.visible ? 'NORMAL' : 'UNKNOWN',
+        visible: state.visible,
+        safe_window_id: state.windowHandle ? `hwnd-${state.windowHandle}` : null,
+        active_title: null
+      };
+    }
     const info = await this.sessionInfo(sessionId);
     const data = info?.output?.data || info?.output || {};
     const runtime = data.runtime && typeof data.runtime === 'object' ? data.runtime : {};
     const processId = Number(data.pid || runtime.pid) || null;
-    const configuredHeaded = this.config.headed ?? process.env.AGENT_BROWSER_HEADED;
+    const configuredHeaded = this.sessionHeaded.get(sessionId) ?? this.config.headed ?? process.env.AGENT_BROWSER_HEADED;
     const headed = configuredHeaded === true || configuredHeaded === '1' || configuredHeaded === 'true';
     return {
       executable: path.basename(String(runtime.executablePath || runtime.executable || 'chromium')),
@@ -171,8 +229,25 @@ export class AgentBrowserEngine {
   }
 
   async run(sessionId, args, options = {}) {
-    const globalArgs = ['--session', sessionId, '--namespace', this.config.namespace, '--json', ...(options.flags || [])];
+    const useHeadedFlag = this.sessionHeaded.get(sessionId) && !this.externalSessions.has(sessionId);
+    const globalArgs = ['--session', sessionId, '--namespace', this.sessionNamespaces.get(sessionId) || this.config.namespace, '--json', ...(useHeadedFlag ? ['--headed'] : []), ...(options.flags || [])];
     return this.#runRaw([...globalArgs, ...args], { sessionId, timeoutMs: options.timeoutMs, input: options.input });
+  }
+
+  async #verifyExternalTargets(sessionId, port) {
+    const tabs = await this.run(sessionId, ['tab']);
+    let expected;
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error('CDP target listing unavailable');
+      expected = new Set((await response.json()).filter(item => item.type === 'page').map(item => item.id));
+    } catch {
+      throw new BrokerError('SESSION', 'CDP_TARGET_CHECK_FAILED', 'Could not verify the dedicated Chrome targets.', undefined, 502);
+    }
+    const actual = tabs.output?.data?.tabs?.filter(item => item.type === 'page').map(item => item.targetId) || [];
+    if (!actual.length || actual.some(id => !expected.has(id))) {
+      throw new BrokerError('SESSION', 'CDP_ATTACH_MISMATCH', 'agent-browser attached to a different Chrome instance.', undefined, 409);
+    }
   }
 
   #runRaw(args, options = {}) {
@@ -222,9 +297,48 @@ export class AgentBrowserEngine {
   }
 }
 
-function runPowerShell(script) {
+async function ensureExternalChrome(config, profilePath) {
+  if (!existsSync(config.executablePath)) {
+    throw new BrokerError('CONFIG', 'CHROME_EXECUTABLE_MISSING', 'The configured installed Chrome executable is missing.', undefined, 500);
+  }
+  let state = await inspectExternalChrome(config, profilePath);
+  if (state.owned && state.visible) return state;
+  if (state.portOwner || state.profileProcesses > 0) {
+    throw new BrokerError('SESSION', 'EXTERNAL_CHROME_CONFLICT', 'The Chrome profile or CDP port is already in use by a different or non-interactive process.', undefined, 409);
+  }
+  await new Promise((resolve, reject) => {
+    const child = spawn(config.executablePath, [
+      `--user-data-dir=${profilePath}`,
+      `--remote-debugging-port=${config.cdpPort}`,
+      '--remote-debugging-address=127.0.0.1',
+      '--no-first-run',
+      'about:blank'
+    ], { detached: true, stdio: 'ignore', windowsHide: false });
+    child.once('error', reject);
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    state = await inspectExternalChrome(config, profilePath);
+    if (state.owned && state.visible) return state;
+    if (state.portOwner && !state.owned) break;
+  }
+  throw new BrokerError('SESSION', 'EXTERNAL_CHROME_START_FAILED', 'Installed Chrome did not open an interactive window on its dedicated CDP port.', undefined, 502);
+}
+
+async function inspectExternalChrome(config, profilePath) {
+  const script = `$port=[int]$env:V2_CDP_PORT;$profilePath=$env:V2_PROFILE_PATH;$chromePath=$env:V2_CHROME_PATH;$listeners=@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue);$listener=@($listeners|Where-Object{$_.LocalAddress -eq '127.0.0.1'}|Select-Object -First 1);$ownerId=if($listener.Count){[int]$listener[0].OwningProcess}else{0};$owner=if($ownerId){Get-CimInstance Win32_Process -Filter "ProcessId = $ownerId"}else{$null};$profiles=@(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'"|Where-Object{$_.CommandLine -like "*--user-data-dir=$profilePath*"});$owned=[bool]($owner -and $owner.ExecutablePath -ieq $chromePath -and $owner.CommandLine -like "*--user-data-dir=$profilePath*" -and $owner.CommandLine -like "*--remote-debugging-port=$port*");$window=if($owned){Get-Process -Id $ownerId -ErrorAction SilentlyContinue}else{$null};[pscustomobject]@{owned=$owned;portOwner=$ownerId;profileProcesses=$profiles.Count;visible=[bool]($window -and $window.MainWindowHandle -ne 0 -and $window.SessionId -ne 0);windowHandle=if($window){[string]$window.MainWindowHandle}else{$null}}|ConvertTo-Json -Compress`;
+  const output = await runPowerShell(script, {
+    V2_CDP_PORT: String(config.cdpPort),
+    V2_PROFILE_PATH: profilePath,
+    V2_CHROME_PATH: config.executablePath
+  });
+  return JSON.parse(output);
+}
+
+function runPowerShell(script, extraEnv = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, env: { ...process.env, ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => { stdout += chunk; });

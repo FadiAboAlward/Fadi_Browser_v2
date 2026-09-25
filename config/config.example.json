@@ -10,22 +10,63 @@
   "leaseTtlMs": 300000,
   "recoveryWindowMs": 120000,
   "retentionDays": 30,
+  "browserPools": {
+    "default": {
+      "slots": [
+        {
+          "id": "browser-1",
+          "authProfileId": "pool-profile-1"
+        },
+        {
+          "id": "browser-2",
+          "authProfileId": "pool-profile-2"
+        },
+        {
+          "id": "browser-3",
+          "authProfileId": "pool-profile-3"
+        },
+        {
+          "id": "browser-4",
+          "authProfileId": "pool-profile-4"
+        },
+        {
+          "id": "browser-5",
+          "authProfileId": "pool-profile-5"
+        }
+      ]
+    }
+  },
   "clients": {
     "fadi-gpt": {
       "defaultAuthProfile": "fadi",
-      "allowedAuthProfiles": ["fadi"]
+      "allowedAuthProfiles": [
+        "fadi"
+      ],
+      "allowedPools": [
+        "default"
+      ],
+      "defaultPool": "default"
     },
     "goilot-gpt": {
       "defaultAuthProfile": "goilot",
-      "allowedAuthProfiles": ["goilot"]
+      "allowedAuthProfiles": [
+        "goilot"
+      ]
     },
     "goilot-claude": {
       "defaultAuthProfile": "goilot-claude",
-      "allowedAuthProfiles": ["goilot-claude"]
+      "allowedAuthProfiles": [
+        "goilot-claude"
+      ]
     },
     "maintenance": {
       "defaultAuthProfile": "public",
-      "allowedAuthProfiles": ["public", "fadi", "goilot", "goilot-claude"]
+      "allowedAuthProfiles": [
+        "public",
+        "fadi",
+        "goilot",
+        "goilot-claude"
+      ]
     }
   },
   "authProfiles": {
@@ -39,11 +80,57 @@
     },
     "goilot": {
       "persistent": true,
-      "mode": "profile_bound"
+      "mode": "profile_bound",
+      "headed": true
     },
     "goilot-claude": {
       "persistent": true,
       "mode": "profile_bound"
+    },
+    "pool-profile-1": {
+      "persistent": true,
+      "mode": "profile_bound",
+      "headed": true,
+      "externalChrome": {
+        "cdpPort": 9201,
+        "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      }
+    },
+    "pool-profile-2": {
+      "persistent": true,
+      "mode": "profile_bound",
+      "headed": true,
+      "externalChrome": {
+        "cdpPort": 9202,
+        "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      }
+    },
+    "pool-profile-3": {
+      "persistent": true,
+      "mode": "profile_bound",
+      "headed": true,
+      "externalChrome": {
+        "cdpPort": 9203,
+        "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      }
+    },
+    "pool-profile-4": {
+      "persistent": true,
+      "mode": "profile_bound",
+      "headed": true,
+      "externalChrome": {
+        "cdpPort": 9204,
+        "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      }
+    },
+    "pool-profile-5": {
+      "persistent": true,
+      "mode": "profile_bound",
+      "headed": true,
+      "externalChrome": {
+        "cdpPort": 9205,
+        "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      }
     }
   }
 }

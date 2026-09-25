@@ -11,7 +11,7 @@ function resolveIdentity(boundContext) {
   return { clientId, leaseToken };
 }
 
-export function createBrokerMcpServer(backend, version = '0.1.0', preboundClientId = null) {
+export function createBrokerMcpServer(backend, version = '0.1.0', preboundClientId = null, boundContext = { clientId: null, leaseToken: null }) {
   const server = new McpServer({
     name: 'fadi-browser-v2',
     version
@@ -20,8 +20,6 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     instructions: 'Acquire an exclusive lease before browser operations. Once acquired, operations are bound to the session.'
   });
 
-  const boundContext = { clientId: null, leaseToken: null };
-
   const clientIdSchema = preboundClientId 
     ? z.string().optional() 
     : z.string().min(1);
@@ -29,6 +27,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   register(server, 'browser_acquire', 'Allocate one isolated browser session under local client/auth policy.', z.object({
     client_id: clientIdSchema,
     auth_profile_id: z.string().min(1).optional(),
+    pool_id: z.string().min(1).optional(),
     task_label: z.string().max(80).optional(),
     wait: z.boolean().optional(),
     wait_timeout_ms: z.number().int().min(1000).max(300000).optional()
@@ -40,7 +39,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     }
 
     const waitTimeoutMs = args.wait === false ? 0 : (args.wait_timeout_ms || 30000);
-    const result = await backend.acquire({ clientId: actualClientId, authProfileId: args.auth_profile_id, taskLabel: args.task_label, waitTimeoutMs, signal: extra?.signal });
+    const result = await backend.acquire({ clientId: actualClientId, authProfileId: args.auth_profile_id, poolId: args.pool_id, taskLabel: args.task_label, waitTimeoutMs, signal: extra?.signal });
     boundContext.clientId = actualClientId;
     boundContext.leaseToken = result.lease_token;
     const { lease_token: recoveryCredential, ...publicResult } = result;
@@ -209,3 +208,4 @@ function normalizeStructured(result) {
   if (result && typeof result === 'object' && !Array.isArray(result)) return result;
   return { result };
 }
+

@@ -43,10 +43,14 @@ export function loadConfig(options = {}) {
     headed: raw.headed === true,
     namespace: raw.namespace || 'fadi-browser-v2',
     clients: raw.clients || {},
-    authProfiles: raw.authProfiles || {}
+    authProfiles: raw.authProfiles || {},
+    browserPools: raw.browserPools || {}
   };
 
   for (const [id, profile] of Object.entries(config.authProfiles)) {
+    if (profile.headed !== undefined && typeof profile.headed !== 'boolean') {
+      throw new BrokerError('CONFIG', 'INVALID_HEADED_MODE', `Auth profile ${id} must set headed to true or false.`, undefined, 500);
+    }
     profile.mode = profile.mode || 'portable';
     if (!['portable', 'profile_bound'].includes(profile.mode)) {
       throw new BrokerError('CONFIG', 'INVALID_AUTH_MODE', `Auth profile ${id} has an invalid mode.`, undefined, 500);
@@ -65,6 +69,52 @@ export function loadConfig(options = {}) {
         throw new BrokerError('CONFIG', 'PROFILE_PATH_OUTSIDE_V2', `Profile-bound auth profile ${id} must use a path under the V2 runtime auth directory.`, undefined, 500);
       }
       profile.profilePath = resolvedProfilePath;
+    }
+    if (profile.externalChrome) {
+      const external = profile.externalChrome;
+      if (process.platform !== 'win32' || profile.mode !== 'profile_bound' || profile.headed !== true ||
+          !Number.isInteger(external.cdpPort) || external.cdpPort < 1024 || external.cdpPort > 65535 ||
+          [config.port, 8931, 8932, 8933, 8941, 8942, 8943].includes(external.cdpPort) ||
+          typeof external.executablePath !== 'string' || !external.executablePath.trim()) {
+        throw new BrokerError('CONFIG', 'INVALID_EXTERNAL_CHROME', `Auth profile ${id} has an invalid external Chrome configuration.`, undefined, 500);
+      }
+      external.executablePath = path.resolve(expandWindowsEnv(external.executablePath));
+    }
+  }
+
+  const slotIds = new Set();
+  const slotProfiles = new Set();
+  const profilePaths = new Set();
+  const cdpPorts = new Set();
+  for (const [poolId, pool] of Object.entries(config.browserPools)) {
+    if (!Array.isArray(pool?.slots) || pool.slots.length === 0) {
+      throw new BrokerError('CONFIG', 'INVALID_BROWSER_POOL', `Browser pool ${poolId} must contain slots.`, undefined, 500);
+    }
+    for (const slot of pool.slots) {
+      const profile = config.authProfiles[slot?.authProfileId];
+      if (typeof slot?.id !== 'string' || !slot.id.trim() || slotIds.has(slot.id) ||
+          slotProfiles.has(slot.authProfileId) || !profile || !profile.persistent ||
+          profile.mode !== 'profile_bound' || profile.headed !== true || !profile.externalChrome) {
+        throw new BrokerError('CONFIG', 'INVALID_BROWSER_SLOT', `Browser pool ${poolId} contains an invalid or duplicate persistent slot.`, undefined, 500);
+      }
+      const profilePath = profile.profilePath.toLowerCase();
+      const cdpPort = profile.externalChrome.cdpPort;
+      if (profilePaths.has(profilePath) || cdpPorts.has(cdpPort)) {
+        throw new BrokerError('CONFIG', 'BROWSER_SLOT_COLLISION', 'Browser slots must have distinct profile paths and CDP ports.', undefined, 500);
+      }
+      slotIds.add(slot.id);
+      slotProfiles.add(slot.authProfileId);
+      profilePaths.add(profilePath);
+      cdpPorts.add(cdpPort);
+    }
+  }
+  for (const [clientId, policy] of Object.entries(config.clients)) {
+    if (policy.allowedPools !== undefined && (!Array.isArray(policy.allowedPools) ||
+        policy.allowedPools.some(poolId => typeof poolId !== 'string' || !config.browserPools[poolId]))) {
+      throw new BrokerError('CONFIG', 'INVALID_CLIENT_POOL_POLICY', `Client ${clientId} references an invalid browser pool.`, undefined, 500);
+    }
+    if (policy.defaultPool !== undefined && !policy.allowedPools?.includes(policy.defaultPool)) {
+      throw new BrokerError('CONFIG', 'INVALID_CLIENT_POOL_POLICY', `Client ${clientId} has a default pool outside its allowlist.`, undefined, 500);
     }
   }
 
