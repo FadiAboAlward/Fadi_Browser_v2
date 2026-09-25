@@ -8,6 +8,7 @@ Architecture decisions belong in docs/adr/.
 - ADR-002 — Use a Node 24 broker with `agent-browser` 0.38.1 and MCP SDK 2.0.0; prefer server-side lease/task binding.
 - ADR-003 — Expose an actionable bounded FIFO queue when capacity is full (replaces immediate structured error).
 - ADR-004 — Distinguish portable auth identities from profile-bound identities; use isolated task sessions with encrypted persistence and known-good generations.
+- ADR-005 — Decouple authorized client identity from shared persistent browser-slot identity; use visible installed Chrome, exclusive per-slot leases, and same-window human/AI interaction.
 
 ## Decisions to record as implementation progresses
 

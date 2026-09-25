@@ -101,6 +101,12 @@ V2 is successful when real-world use shows:
 - acceptable resource usage;
 - no regression to V1.
 
+## Production outcome
+
+The initial production target was reached on 25 Sep 2026. The final runtime uses five persistent visible Chrome slots shared by authorized AI clients. Client identity is no longer a permanent browser assignment; the broker allocates a free slot and preserves exclusive ownership for the lease. Human intervention for login, OTP, MFA, CAPTCHA, or verification occurs in the same visible browser, after which the AI can continue.
+
+The verified deployment baseline is `1beadd42b7e964d54cc96853d4b920e644f2af85`. See `docs/IMPLEMENTATION_PLAYBOOK.md` for the proven build order, rollout failures, and production checklist.
+
 ## Long-term vision
 
 The repository should become understandable and maintainable by any competent developer or AI coding agent without needing private conversation history.

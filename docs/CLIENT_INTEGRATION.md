@@ -27,7 +27,7 @@ There are currently three user-facing AI clients configured in V2:
 - **Endpoint**: `http://127.0.0.1:8951/mcp/fadi-gpt`
 - **Registration**: On 25 Sep 2026, the existing tunnel was associated with the Fadi ChatGPT workspace and the Fadi GPT app connected with `No Auth`. The local tunnel supplies `X-Fadi-Browser-Token` for both MCP calls and tool discovery from the existing encrypted V2 broker credential; no new tunnel, key, or plaintext credential was created.
 - **Actual-client verification**: On 25 Sep 2026, Fadi ChatGPT itself completed `browser_status` (zero active/queued), one `browser_acquire(pool_id="default")` on `browser-1`, navigation to `https://example.com`, a `browser_snapshot` containing "Example Domain", `browser_release` (`CLOSED`), and final `browser_status` (zero active/queued; all five pool slots `FREE`). The local broker status independently confirmed the final zero/zero and five free slots. No recovery credential or second acquire was used.
-- **Binding fix**: The first actual-client test exposed a Fadi-only failure: `browser_acquire` worked, but subsequent `browser_navigate` and `browser_release` had no bound MCP task because the per-chat binding was limited to `goilot-gpt`. A focused source fix extends the same binding to `fadi-gpt` with client-separated keys. The successful retest ran a locally activated dirty working tree; it is not a committed or production-deployed version. The repository release remains pending approval.
+- **Binding fix**: The first actual-client test exposed a Fadi-only failure: `browser_acquire` worked, but subsequent `browser_navigate` and `browser_release` had no bound MCP task because the per-chat binding was limited to `goilot-gpt`. A focused source fix extended the same binding to `fadi-gpt` with client-separated keys. That fix is included in production baseline `1beadd42b7e964d54cc96853d4b920e644f2af85` and passed real Fadi ChatGPT end-to-end verification.
 
 **Goilot GPT**:
 - **Environment**: ChatGPT in the `Alex_Workspace` Business workspace, using the separate V1 Account B browser for setup and QA.
@@ -58,7 +58,7 @@ The first two-slot trial keeps `goilot` as the backing identity for `browser-1` 
 
 On 24 Sep 2026, the local two-slot trial used Alex ChatGPT → Goilot GPT for Client A and an independent pre-bound `goilot-claude` MCP client for Client B. Both held active leases simultaneously on separate installed Chrome processes/profile directories; release of A left B active, and releasing B returned both slots to FREE with 0 active and 0 queued. A follow-up acquire reattached to the same persistent Chrome processes. The fresh `browser-2` profile showed Sentry's login state; this is expected until that slot is authenticated separately. This test does not claim Claude Desktop UI invocation or a five-slot rollout.
 
-The subsequent local five-slot capacity check used the same pool policy and separate directories/CDP ports for `browser-3`, `browser-4`, and `browser-5`. It observed five ACTIVE visible sessions concurrently, `POOL_EXHAUSTED` on an immediate sixth request, and promotion of a bounded sixth request when a slot was released. The check ended with all five slots FREE and no queued sessions. Each new profile was manually authenticated to Sentry in its own visible Chrome window. Broker-side navigation to Sentry Issues then confirmed that authentication survived release/reacquire, a normal Chrome restart, and a V2 restart for each profile, with zero active and zero queued sessions after each check. This is local broker evidence, supplemented by the separate real-client Claude Desktop and Fadi GPT results above.
+The subsequent local five-slot capacity check used the same pool policy and separate directories/CDP ports for `browser-3`, `browser-4`, and `browser-5`. It observed five ACTIVE visible sessions concurrently, `POOL_EXHAUSTED` on an immediate sixth request, and promotion of a bounded sixth request when a slot was released. The check ended with all five slots FREE and no queued sessions. Each new profile was manually authenticated to Sentry in its own visible Chrome window. Broker-side navigation to Sentry Issues then confirmed that authentication survived release/reacquire, a normal Chrome restart, and a V2 restart for each profile, with zero active and zero queued sessions after each check. This local broker evidence was followed by real-client verification from Alex ChatGPT / Goilot GPT, Fadi ChatGPT / Fadi GPT, and Claude Desktop. The five-slot build was then deployed from commit `1beadd42b7e964d54cc96853d4b920e644f2af85` and passed the production smoke test with all five slots returning FREE and zero active/queued sessions.
 
 ### 3. Adding or Rotating Clients
 
@@ -76,3 +76,19 @@ To add a new client or rotate configurations:
 - **Impersonation Blocked**: Ensure the transport layer (tunnel path or stdio env variable) matches the `client_id` the AI is passing.
 - **Queue Timeout**: Ensure previous crashed sessions were correctly reaped. The broker will enforce `maxSessionsPerClient` (default: 3). If `profile_bound` is used, only 1 session per auth profile is allowed concurrently.
 - **fetch failed**: If you see `fetch failed` or `ECONNREFUSED` locally, ensure the V2 Broker daemon is running on port 8951.
+
+
+## Production routing rule
+
+For normal shared-pool work, participating clients should request the allowed shared pool and let the broker select a free slot.
+
+Do not:
+
+- choose `browser-1` through `browser-5` directly from the client;
+- change the pre-bound `client_id`;
+- broaden `allowedAuthProfiles` merely to make shared allocation work;
+- make one persistent profile concurrent.
+
+Shared-pool permission and direct legacy auth-profile permission are intentionally separate.
+
+See `docs/IMPLEMENTATION_PLAYBOOK.md` for the proven rollout order and failure modes.

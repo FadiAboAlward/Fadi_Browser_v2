@@ -5,21 +5,22 @@ This file lets a new AI agent take over the project without prior conversation c
 ## New-agent checklist
 
 1. Read AGENTS.md.
-2. Read ARCHITECTURE.md.
-3. Read project-manifest.yaml.
-4. Read docs/V1_LESSONS_APPLIED.md.
-5. Read relevant ADRs, especially ADR-002 and ADR-003.
-6. If runtime access exists, run status.
-7. Run doctor.
-8. Pull a sanitized report for the relevant period.
-9. Inspect diagnostics if the task is incident-related.
-10. Create a branch for non-trivial work.
-11. Make the smallest safe change.
-12. Run tests.
-13. Run concurrency and reconnect regressions.
-14. Compare benchmark for performance changes.
-15. Update docs or ADR if behavior changed.
-16. Open a PR.
+2. Read docs/IMPLEMENTATION_PLAYBOOK.md.
+3. Read ARCHITECTURE.md.
+4. Read project-manifest.yaml.
+5. Read docs/V1_LESSONS_APPLIED.md.
+6. Read relevant ADRs, especially lease binding, queue, auth persistence, and shared-pool decisions.
+7. If runtime access exists, run status.
+8. Run doctor.
+9. Pull a sanitized report for the relevant period.
+10. Inspect diagnostics if the task is incident-related.
+11. Create a branch for non-trivial work.
+12. Make the smallest safe change.
+13. Run tests.
+14. Run concurrency and reconnect regressions.
+15. Compare benchmark for performance changes.
+16. Update docs or ADR if behavior changed.
+17. Open a PR.
 
 ## If the user says it is slow
 
@@ -98,3 +99,23 @@ Lead with:
 - any truly unavoidable human action.
 
 Avoid lengthy manual instructions if the agent can execute the change directly.
+
+
+## Production baseline
+
+The production rollout completed on 25 Sep 2026.
+
+Verified code baseline:
+
+`1beadd42b7e964d54cc96853d4b920e644f2af85`
+
+At activation time:
+
+- five persistent pool slots were present;
+- Fadi GPT, Goilot GPT, and Claude Desktop had real-client verification;
+- authentication survived release/reacquire and restart;
+- the post-deploy Example Domain and Sentry smoke test passed;
+- release returned the pool to five FREE slots;
+- final active and queued session counts were zero.
+
+Do not reopen already-proven layers without regression evidence. If reproducing the system elsewhere, follow `docs/IMPLEMENTATION_PLAYBOOK.md` in order.
