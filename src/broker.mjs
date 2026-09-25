@@ -385,6 +385,46 @@ export class LeaseBroker {
     });
   }
 
+  async screenshot({ clientId, leaseToken, fullPage = false }) {
+    return this.#withLease(clientId, leaseToken, 'screenshot', lease => this.engine.screenshot(lease.sessionId, { fullPage }));
+  }
+
+  async consoleMessages({ clientId, leaseToken, clear = false }) {
+    return this.#withLease(clientId, leaseToken, 'console_messages', lease => this.engine.consoleMessages(lease.sessionId, { clear }));
+  }
+
+  async pageErrors({ clientId, leaseToken, clear = false }) {
+    return this.#withLease(clientId, leaseToken, 'page_errors', lease => this.engine.pageErrors(lease.sessionId, { clear }));
+  }
+
+  async networkRequests({ clientId, leaseToken, filter, type, method, status }) {
+    return this.#withLease(clientId, leaseToken, 'network_requests', async lease => {
+      const result = await this.engine.networkRequests(lease.sessionId, { filter, type, method, status });
+      return redactNetworkResult(result);
+    });
+  }
+
+  async networkRequestDetail({ clientId, leaseToken, requestId }) {
+    if (requestId === undefined || requestId === null || requestId === '') {
+      throw new BrokerError('POLICY', 'INVALID_REQUEST_ID', 'A request ID is required.');
+    }
+    return this.#withLease(clientId, leaseToken, 'network_request_detail', async lease => {
+      const result = await this.engine.networkRequestDetail(lease.sessionId, requestId);
+      return redactNetworkResult(result);
+    });
+  }
+
+  async waitForCondition({ clientId, leaseToken, text, textGone, url, loadState, fn, selector, timeoutMs }) {
+    return this.#withLease(clientId, leaseToken, 'wait_for_condition', lease => this.engine.waitForCondition(lease.sessionId, { text, textGone, url, loadState, fn, selector, timeoutMs }));
+  }
+
+  async resize({ clientId, leaseToken, width, height }) {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 7680 || height > 4320) {
+      throw new BrokerError('POLICY', 'INVALID_VIEWPORT', 'Viewport dimensions must be positive integers up to 7680x4320.');
+    }
+    return this.#withLease(clientId, leaseToken, 'resize', lease => this.engine.resize(lease.sessionId, width, height));
+  }
+
   async reapStale() {
     const now = Date.now();
     let reaped = false;
@@ -593,4 +633,39 @@ export class LeaseBroker {
       browser: lease.browserDiagnostics
     };
   }
+}
+
+const SENSITIVE_HEADER_NAMES = new Set([
+  'authorization', 'cookie', 'set-cookie', 'x-csrf-token', 'x-xsrf-token',
+  'proxy-authorization', 'x-api-key', 'x-auth-token', 'x-access-token',
+  'x-session-id', 'x-session-token', 'x-fadi-browser-token'
+]);
+
+const SENSITIVE_URL_PARAMS = /([?&](?:token|key|secret|password|code|access_token|refresh_token|api_key|auth|session_id|otp)=)[^&#\s]+/gi;
+
+function redactNetworkResult(result) {
+  if (!result || typeof result !== 'object') return result;
+  return JSON.parse(JSON.stringify(result), (key, value) => {
+    if (typeof key === 'string') {
+      const lower = key.toLowerCase();
+      if (SENSITIVE_HEADER_NAMES.has(lower)) return '[REDACTED]';
+    }
+    if (typeof value === 'string') {
+      if (key === 'url' || key === 'URL') {
+        return value.replace(SENSITIVE_URL_PARAMS, '$1[REDACTED]');
+      }
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const cleaned = {};
+      for (const [hKey, hVal] of Object.entries(value)) {
+        if (SENSITIVE_HEADER_NAMES.has(hKey.toLowerCase())) {
+          cleaned[hKey] = '[REDACTED]';
+        } else {
+          cleaned[hKey] = hVal;
+        }
+      }
+      return cleaned;
+    }
+    return value;
+  });
 }

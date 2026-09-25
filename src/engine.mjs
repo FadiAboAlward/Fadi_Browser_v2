@@ -80,6 +80,54 @@ export class AgentBrowserEngine {
     return this.run(sessionId, ['eval', '-b', encoded]);
   }
 
+  async screenshot(sessionId, options = {}) {
+    const args = ['screenshot'];
+    if (options.fullPage) args.push('--full');
+    return this.run(sessionId, args);
+  }
+
+  async resize(sessionId, width, height) {
+    return this.run(sessionId, ['set', 'viewport', String(width), String(height)]);
+  }
+
+  async consoleMessages(sessionId, options = {}) {
+    const args = ['console'];
+    if (options.clear) args.push('--clear');
+    return this.run(sessionId, args);
+  }
+
+  async pageErrors(sessionId, options = {}) {
+    const args = ['errors'];
+    if (options.clear) args.push('--clear');
+    return this.run(sessionId, args);
+  }
+
+  async networkRequests(sessionId, options = {}) {
+    const args = ['network', 'requests'];
+    if (options.filter) args.push('--filter', options.filter);
+    if (options.type) args.push('--type', options.type);
+    if (options.method) args.push('--method', options.method);
+    if (options.status) args.push('--status', options.status);
+    return this.run(sessionId, args);
+  }
+
+  async networkRequestDetail(sessionId, requestId) {
+    return this.run(sessionId, ['network', 'request', String(requestId)]);
+  }
+
+  async waitForCondition(sessionId, options = {}) {
+    const args = ['wait'];
+    const timeoutMs = Math.max(this.timeoutMs, (options.timeoutMs || 30000) + 10000);
+    if (options.text) args.push('--text', options.text);
+    else if (options.textGone) args.push('--fn', `!document.body.innerText.includes(${JSON.stringify(options.textGone)})`);
+    else if (options.url) args.push('--url', options.url);
+    else if (options.loadState) args.push('--load', options.loadState);
+    else if (options.fn) args.push('--fn', options.fn);
+    else if (options.selector) args.push(options.selector);
+    else throw new BrokerError('POLICY', 'INVALID_WAIT_CONDITION', 'At least one wait condition must be specified.');
+    return this.run(sessionId, args, { timeoutMs });
+  }
+
   async closeSession(sessionId) {
     return this.run(sessionId, ['close'], { timeoutMs: 30000 });
   }

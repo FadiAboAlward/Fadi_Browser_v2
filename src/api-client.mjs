@@ -17,6 +17,13 @@ export class BrokerApiClient {
   evaluate(input) { return this.#post('/v1/evaluate', mapInput(input)); }
   command(input) { return this.#post('/v1/command', mapInput(input)); }
   restoreWindow(input) { return this.#post('/v1/restore-window', mapInput(input)); }
+  screenshot(input) { return this.#post('/v1/screenshot', mapInput(input)); }
+  consoleMessages(input) { return this.#post('/v1/console-messages', mapInput(input)); }
+  pageErrors(input) { return this.#post('/v1/page-errors', mapInput(input)); }
+  networkRequests(input) { return this.#post('/v1/network-requests', mapInput(input)); }
+  networkRequestDetail(input) { return this.#post('/v1/network-request-details', mapInput(input)); }
+  waitForCondition(input) { return this.#post('/v1/wait-for-condition', mapInput(input)); }
+  resize(input) { return this.#post('/v1/resize', mapInput(input)); }
   cancelQueue(input) { return this.#post('/v1/queue/cancel', mapInput(input)); }
 
   async #post(route, payload) {
@@ -44,7 +51,12 @@ function mapInput(input) {
     ['authProfileId', 'auth_profile_id'],
     ['taskLabel', 'task_label'],
     ['waitTimeoutMs', 'wait_timeout_ms'],
-    ['queueId', 'queue_id']
+    ['queueId', 'queue_id'],
+    ['fullPage', 'full_page'],
+    ['requestId', 'request_id'],
+    ['textGone', 'text_gone'],
+    ['loadState', 'load_state'],
+    ['timeoutMs', 'timeout_ms']
   ];
   for (const [camel, snake] of pairs) {
     if (camel in mapped) {

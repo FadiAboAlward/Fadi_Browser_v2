@@ -90,6 +90,16 @@ Implemented browser tools also include:
 - `browser_evaluate`;
 - `browser_command` for an explicit allowlist of common agent-browser interactions.
 
+Phase 1 QA capabilities (added in 0.2.0):
+
+- `browser_screenshot` – capture a viewport or full-page screenshot;
+- `browser_console_messages` – read console messages captured during the session;
+- `browser_page_errors` – read JavaScript/page errors captured during the session;
+- `browser_network_requests` – list network requests with sensitive data redacted;
+- `browser_network_request_details` – retrieve full details of a specific request with sensitive data redacted;
+- `browser_wait_for_condition` – wait for text, URL, load state, selector, or JS expression;
+- `browser_resize` – resize the viewport for responsive layout testing.
+
 After `browser_acquire`, all routine browser tools resolve ownership from the stateful MCP transport session. Their public schemas contain neither `client_id` nor `lease_token`.
 
 The local HTTP operational API still uses `client_id` plus a lease credential because it is an administrative/script surface rather than the public model-facing MCP contract.
@@ -118,8 +128,8 @@ Audit tools individually.
 
 Recommended semantic classes:
 
-- read-only: status, snapshot, find, list/read operations;
-- local low-risk state change: resize, restore window, select tab;
+- read-only: status, snapshot, find, list/read operations, screenshot, console messages, page errors, network requests;
+- local low-risk state change: resize, restore window, select tab, wait for condition;
 - browser interaction: navigate, click, type, keypress;
 - destructive/external write: only when the action can genuinely cause destructive external effects.
 

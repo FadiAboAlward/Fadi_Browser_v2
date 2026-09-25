@@ -121,6 +121,72 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     return backend.restoreWindow({ clientId, leaseToken });
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
+  // --- Phase 1 QA capabilities ---
+
+  register(server, 'browser_screenshot', 'Capture a screenshot of the current page in the owned session.', z.object({
+    full_page: z.boolean().optional()
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.screenshot({ clientId, leaseToken, fullPage: args.full_page });
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
+  register(server, 'browser_console_messages', 'Return console messages captured during the owned session.', z.object({
+    clear: z.boolean().optional()
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.consoleMessages({ clientId, leaseToken, clear: args.clear });
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
+  register(server, 'browser_page_errors', 'Return JavaScript and page errors captured during the owned session.', z.object({
+    clear: z.boolean().optional()
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.pageErrors({ clientId, leaseToken, clear: args.clear });
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
+  register(server, 'browser_network_requests', 'Return a list of network requests captured during the owned session. Sensitive headers and credentials are redacted.', z.object({
+    filter: z.string().max(500).optional(),
+    type: z.string().max(100).optional(),
+    method: z.string().max(10).optional(),
+    status: z.string().max(20).optional()
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.networkRequests({ clientId, leaseToken, filter: args.filter, type: args.type, method: args.method, status: args.status });
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
+  register(server, 'browser_network_request_details', 'Return full details of a specific network request by ID. Sensitive headers and credentials are redacted.', z.object({
+    request_id: z.string().min(1)
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.networkRequestDetail({ clientId, leaseToken, requestId: args.request_id });
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
+  register(server, 'browser_wait_for_condition', 'Wait for a condition in the owned session. Exactly one condition must be specified.', z.object({
+    text: z.string().max(1000).optional(),
+    text_gone: z.string().max(1000).optional(),
+    url: z.string().max(2000).optional(),
+    load_state: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
+    fn: z.string().max(5000).optional(),
+    selector: z.string().max(1000).optional(),
+    timeout_ms: z.number().int().min(100).max(120000).optional()
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.waitForCondition({
+      clientId, leaseToken,
+      text: args.text, textGone: args.text_gone, url: args.url,
+      loadState: args.load_state, fn: args.fn, selector: args.selector,
+      timeoutMs: args.timeout_ms
+    });
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false });
+
+  register(server, 'browser_resize', 'Resize the viewport of the owned session to test responsive layouts.', z.object({
+    width: z.number().int().min(1).max(7680),
+    height: z.number().int().min(1).max(4320)
+  }), args => {
+    const { clientId, leaseToken } = resolveIdentity(boundContext);
+    return backend.resize({ clientId, leaseToken, width: args.width, height: args.height });
+  }, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
   return server;
 }
 

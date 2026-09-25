@@ -9,6 +9,7 @@ All notable project changes should be documented here.
 - Added portable versus profile-bound auth enforcement with engine known-good restore validation.
 - Added safe browser window diagnostics/restore metadata and semantic MCP tool annotations.
 - Added blocking working-tree QA, MCP binding/fresh-task regressions, and the complete V1-derived named regression suite.
+- **Phase 1 QA capabilities**: Added `browser_screenshot`, `browser_console_messages`, `browser_page_errors`, `browser_network_requests`, `browser_network_request_details`, `browser_wait_for_condition`, and `browser_resize` — all backed by native `agent-browser` commands, with session isolation, server-side lease binding, and sensitive network data redaction.
 
 ### Added
 
