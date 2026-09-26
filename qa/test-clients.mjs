@@ -9,9 +9,9 @@ async function testClient(clientId, url) {
   
   const env = { ...process.env, FADI_BROWSER_V2_CLIENT_ID: clientId };
   const transport = new StdioClientTransport({
-    command: process.execPath,
-    args: ['src/mcp-stdio.mjs'],
-    env
+    command: 'powershell.exe',
+    args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ps1Path, '-ClientId', clientId],
+    env: process.env
   });
   
   const client = new Client({ name: 'qa-client', version: '1.0' }, { capabilities: {} });
@@ -78,14 +78,10 @@ async function testClient(clientId, url) {
 }
 
 async function main() {
-  const tests = [
-    testClient('fadi-gpt', 'https://example.com/1'),
-    testClient('goilot-gpt', 'https://example.com/2'),
-    testClient('goilot-claude', 'https://example.com/3')
-  ];
-
-  await Promise.all(tests);
-  console.log('All concurrent tests passed!');
+  await testClient('fadi-gpt', 'https://example.com/1');
+  await testClient('goilot-gpt', 'https://example.com/2');
+  await testClient('goilot-claude', 'https://example.com/3');
+  console.log('All tests passed!');
 }
 
 main().catch(err => {

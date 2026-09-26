@@ -302,7 +302,7 @@ async function ensureExternalChrome(config, profilePath) {
     throw new BrokerError('CONFIG', 'CHROME_EXECUTABLE_MISSING', 'The configured installed Chrome executable is missing.', undefined, 500);
   }
   let state = await inspectExternalChrome(config, profilePath);
-  if (state.owned && state.visible) return state;
+  if (state.owned) return state;
   if (state.portOwner || state.profileProcesses > 0) {
     throw new BrokerError('SESSION', 'EXTERNAL_CHROME_CONFLICT', 'The Chrome profile or CDP port is already in use by a different or non-interactive process.', undefined, 409);
   }
@@ -320,7 +320,7 @@ async function ensureExternalChrome(config, profilePath) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 500));
     state = await inspectExternalChrome(config, profilePath);
-    if (state.owned && state.visible) return state;
+    if (state.owned) return state;
     if (state.portOwner && !state.owned) break;
   }
   throw new BrokerError('SESSION', 'EXTERNAL_CHROME_START_FAILED', 'Installed Chrome did not open an interactive window on its dedicated CDP port.', undefined, 502);
