@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { LeaseBroker } from '../src/broker.mjs';
+import { LeaseBroker, redactNetworkResult } from '../src/broker.mjs';
 import { Telemetry } from '../src/telemetry.mjs';
 
 class FakeEngine {
@@ -476,4 +476,29 @@ test('interactive_window_restore_preserves_profile', async () => {
     f.telemetry.close();
     rmSync(f.root, { recursive: true, force: true });
   }
+});
+test('redactNetworkResult protects nested request/response body strings', async () => {
+  const result = {
+    url: 'https://example.com/?token=secret',
+    request: {
+      headers: { authorization: 'Bearer secret-token' },
+      postData: '{"cookie":"session_id=foo","token":"supersecret","bearer":"Bearer mytoken123","message":"hello"}'
+    },
+    response: {
+      headers: { 'set-cookie': 'session_id=123; HttpOnly' },
+      body: '{"Authorization":"Bearer hidden-token","message":"ok","url":"https://example.com/?token=hide-me"}'
+    }
+  };
+  const redacted = redactNetworkResult(result);
+  
+  assert.equal(redacted.url, 'https://example.com/?token=[REDACTED]');
+  assert.equal(redacted.request.headers.authorization, '[REDACTED]');
+  
+  // Body parsing should hide values inside string bodies
+  assert.match(redacted.request.postData, /"cookie"\s*:\s*"\[REDACTED\]"/);
+  assert.match(redacted.request.postData, /Bearer \[REDACTED\]/);
+  
+  assert.equal(redacted.response.headers['set-cookie'], '[REDACTED]');
+  assert.match(redacted.response.body, /"Authorization"\s*:\s*"\[REDACTED\]"/);
+  assert.match(redacted.response.body, /token=\[REDACTED\]/);
 });

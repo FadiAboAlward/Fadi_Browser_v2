@@ -441,7 +441,7 @@ test('qa_tools_have_correct_risk_metadata', async () => {
   const tools = server._registeredTools;
 
   // Verify read-only tools
-  const readOnlyTools = ['browser_screenshot', 'browser_console_messages', 'browser_page_errors', 'browser_network_requests', 'browser_network_request_details'];
+  const readOnlyTools = ['browser_screenshot', 'browser_network_requests', 'browser_network_request_details'];
   for (const toolName of readOnlyTools) {
     assert.ok(tools[toolName], `Tool ${toolName} should be registered`);
     const annotations = tools[toolName].annotations;

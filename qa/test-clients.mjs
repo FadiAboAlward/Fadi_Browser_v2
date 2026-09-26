@@ -1,4 +1,4 @@
-import { Client } from '@modelcontextprotocol/client';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { spawn } from 'child_process';
 import path from 'path';
@@ -17,6 +17,7 @@ async function testClient(clientId, url) {
   const client = new Client({ name: 'qa-client', version: '1.0' }, { capabilities: {} });
   await client.connect(transport);
   console.log(`[${clientId}] Connected to MCP.`);
+
 
   console.log(`[${clientId}] Acquiring lease...`);
   // Acquire

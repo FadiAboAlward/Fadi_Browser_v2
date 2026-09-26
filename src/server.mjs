@@ -48,7 +48,7 @@ const mcpHandler = createMcpHandler(async (ctx) => {
   }
   const taskKey = chatgptTaskKey(headersObject, preboundClientId);
   
-  if (taskKey) {
+  if (!taskKey) throw new Error('Missing valid task identity. Stateless HTTP POST transport requires stable context headers to bind the MCP lease.');
     const now = Date.now();
     for (const [key, entry] of chatgptTaskContexts) {
       if (now - entry.lastSeen > config.leaseTtlMs + config.recoveryWindowMs + 60000) chatgptTaskContexts.delete(key);
@@ -60,7 +60,6 @@ const mcpHandler = createMcpHandler(async (ctx) => {
     }
     entry.lastSeen = now;
     taskContext = entry.context;
-  }
 
   return createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId, taskContext);
 });
@@ -212,6 +211,7 @@ httpServer.listen(config.port, config.host, () => {
   writeRunningState();
   telemetry.event('health_check', { success: true, concurrencyCount: broker.activeCount(), metadata: { endpoint: `http://${config.host}:${config.port}` } });
 });
+
 
 
 

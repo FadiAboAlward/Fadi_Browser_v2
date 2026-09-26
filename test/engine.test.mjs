@@ -92,3 +92,19 @@ test('external_chrome_fails_closed_when_agent_browser_targets_another_process', 
     rmSync(root, { recursive: true, force: true });
   }
 });
+test('waitForCondition passes correct arguments and timeout', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'wait-for-cond-'));
+  try {
+    const cliPath = path.join(root, 'fake-cli.cjs');
+    writeFileSync(cliPath, "console.log(JSON.stringify({ data: { result: 'ok' }, argv: process.argv.slice(2) }));\n");
+    const engine = new AgentBrowserEngine({ projectRoot: root, namespace: 'test', retentionDays: 1, headed: false }, { cliPath });
+    const res = await engine.waitForCondition('test-session', { textGone: 'loading', timeoutMs: 5000 });
+    const argv = res.output.argv;
+    assert.ok(argv.includes('--timeout'));
+    assert.ok(argv.includes('5000'));
+    assert.ok(argv.includes('--fn'));
+    assert.ok(argv.join(' ').includes('document.body?.innerText'));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

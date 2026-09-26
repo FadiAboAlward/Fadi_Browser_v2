@@ -688,7 +688,7 @@ const SENSITIVE_HEADER_NAMES = new Set([
 
 const SENSITIVE_URL_PARAMS = /([?&](?:token|key|secret|password|code|access_token|refresh_token|api_key|auth|session_id|otp)=)[^&#\s]+/gi;
 
-function redactNetworkResult(result) {
+export function redactNetworkResult(result) {
   if (!result || typeof result !== 'object') return result;
   return JSON.parse(JSON.stringify(result), (key, value) => {
     if (typeof key === 'string') {
@@ -696,9 +696,13 @@ function redactNetworkResult(result) {
       if (SENSITIVE_HEADER_NAMES.has(lower)) return '[REDACTED]';
     }
     if (typeof value === 'string') {
-      if (key === 'url' || key === 'URL') {
-        return value.replace(SENSITIVE_URL_PARAMS, '$1[REDACTED]');
+      let cleaned = value;
+      cleaned = cleaned.replace(SENSITIVE_URL_PARAMS, '$1[REDACTED]');
+      if (cleaned.length > 0) {
+        cleaned = cleaned.replace(/(bearer\s+)[a-zA-Z0-9\-\._~+/]+=*/gi, '$1[REDACTED]');
+        cleaned = cleaned.replace(/(["']?(?:cookie|set-cookie|authorization|access_token|id_token|refresh_token|api_key|session_id)["']?\s*[:=]\s*["']).*?(["'])/gi, '$1[REDACTED]$2');
       }
+      return cleaned;
     }
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       const cleaned = {};

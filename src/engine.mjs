@@ -155,8 +155,9 @@ async screenshot(sessionId, options = {}) {
   async waitForCondition(sessionId, options = {}) {
     const args = ['wait'];
     const timeoutMs = Math.max(this.timeoutMs, (options.timeoutMs || 30000) + 10000);
+    if (options.timeoutMs) args.push('--timeout', String(options.timeoutMs));
     if (options.text) args.push('--text', options.text);
-    else if (options.textGone) args.push('--fn', `!document.body.innerText.includes(${JSON.stringify(options.textGone)})`);
+    else if (options.textGone) args.push('--fn', `!(document.body?.innerText || '').includes(${JSON.stringify(options.textGone)})`);
     else if (options.url) args.push('--url', options.url);
     else if (options.loadState) args.push('--load', options.loadState);
     else if (options.fn) args.push('--fn', options.fn);

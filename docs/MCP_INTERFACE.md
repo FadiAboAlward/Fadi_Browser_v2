@@ -90,7 +90,7 @@ Implemented browser tools also include:
 - `browser_evaluate`;
 - `browser_command` for an explicit allowlist of common agent-browser interactions.
 
-Phase 1 QA capabilities (added in 0.2.0):
+Phase 1 QA capabilities (Unreleased Phase 1):
 
 - `browser_screenshot` – capture a viewport or full-page screenshot;
 - `browser_console_messages` – read console messages captured during the session;

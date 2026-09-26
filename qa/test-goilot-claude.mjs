@@ -1,10 +1,13 @@
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
+import path from 'path';
+
 async function main() {
+  const scriptPath = path.join(import.meta.dirname, '../scripts/mcp-stdio.ps1');
   const transport = new StdioClientTransport({
     command: 'powershell.exe',
-    args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', 'C:\\Users\\Fadi\\OneDrive\\Documents\\GitHub\\Fadi_Browser_v2\\scripts\\mcp-stdio.ps1', '-ClientId', 'goilot-claude'],
+    args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-ClientId', 'goilot-claude'],
     env: process.env
   });
 

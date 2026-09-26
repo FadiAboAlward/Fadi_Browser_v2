@@ -5,6 +5,22 @@ const config = loadConfig();
 const token = process.env.FADI_BROWSER_V2_API_TOKEN;
 if (!token) throw new Error('FADI_BROWSER_V2_API_TOKEN is required.');
 const client = new Client({ name: 'fadi-browser-v2-qa', version: '0.1.0' });
+
+// Regression test: stateless transport missing session headers should fail closed
+const badTransport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp/fadi-gpt`), {
+  requestInit: { headers: { authorization: `Bearer ${token}` } } // Missing x-openai-session
+});
+const badClient = new Client({ name: 'fadi-browser-v2-qa-bad', version: '0.1.0' });
+try {
+  await badClient.connect(badTransport);
+  await badClient.callTool({ name: 'browser_status', arguments: {} });
+  throw new Error('Expected stateless HTTP transport without session headers to fail closed.');
+} catch (err) {
+  if (!err.message.includes('Missing valid task identity')) {
+    throw new Error('Unexpected error from stateless transport: ' + err.message);
+  }
+}
+
 const transport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp/fadi-gpt`), {
   requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-session', 'x-openai-subject': 'user-1' } }
 });
@@ -29,7 +45,7 @@ try {
 
   const acquired = parseToolJson(await client.callTool({ name: 'browser_acquire', arguments: { client_id: 'fadi-gpt', wait: false, task_label: 'mcp-binding-qa' } }));
   if (acquired.lease_token) throw new Error('browser_acquire exposed a routine lease_token.');
-  console.log('acquired:', acquired); if (!acquired.recovery_credential) throw new Error('browser_acquire did not separate the recovery-only credential.');
+  if (!acquired.recovery_credential) throw new Error('browser_acquire did not separate the recovery-only credential.');
   try {
     const navigated = await client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com/#mcp-server-binding' } });
     if (navigated.isError) {

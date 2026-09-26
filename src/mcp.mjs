@@ -134,14 +134,14 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   }), args => {
     const { clientId, leaseToken } = resolveIdentity(boundContext);
     return backend.consoleMessages({ clientId, leaseToken, clear: args.clear });
-  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+  }, { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false });
 
   register(server, 'browser_page_errors', 'Return JavaScript and page errors captured during the owned session.', z.object({
     clear: z.boolean().optional()
   }), args => {
     const { clientId, leaseToken } = resolveIdentity(boundContext);
     return backend.pageErrors({ clientId, leaseToken, clear: args.clear });
-  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+  }, { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false });
 
   register(server, 'browser_network_requests', 'Return a list of network requests captured during the owned session. Sensitive headers and credentials are redacted.', z.object({
     filter: z.string().max(500).optional(),
