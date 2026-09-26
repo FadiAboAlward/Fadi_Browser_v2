@@ -6,7 +6,7 @@ const token = process.env.FADI_BROWSER_V2_API_TOKEN;
 if (!token) throw new Error('FADI_BROWSER_V2_API_TOKEN is required.');
 const client = new Client({ name: 'fadi-browser-v2-qa', version: '0.1.0' });
 const transport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp`), {
-  requestInit: { headers: { authorization: `Bearer ${token}` } }
+  requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-session' } }
 });
 try {
   await client.connect(transport);
@@ -32,7 +32,10 @@ try {
   if (!acquired.recovery_credential) throw new Error('browser_acquire did not separate the recovery-only credential.');
   try {
     const navigated = await client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com/#mcp-server-binding' } });
-    if (navigated.isError) throw new Error('Server-bound browser_navigate failed.');
+    if (navigated.isError) {
+      console.error('Navigate error content:', navigated.content);
+      throw new Error('Server-bound browser_navigate failed.');
+    }
     const snapshot = await client.callTool({ name: 'browser_snapshot', arguments: { compact: true, depth: 3 } });
     if (snapshot.isError) throw new Error('Server-bound browser_snapshot failed.');
     const ownedStatus = parseToolJson(await client.callTool({ name: 'browser_status', arguments: {} }));
@@ -43,7 +46,7 @@ try {
 
   const freshClient = new Client({ name: 'fadi-browser-v2-fresh-chat-qa', version: '0.1.0' });
   const freshTransport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${token}` } }
+    requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-fresh' } }
   });
   try {
     await freshClient.connect(freshTransport);
