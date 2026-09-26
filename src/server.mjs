@@ -197,10 +197,12 @@ async function shutdown(preserveRecoverable) {
 process.on('SIGINT', () => void shutdown(true));
 process.on('SIGTERM', () => void shutdown(true));
 process.on('uncaughtException', error => {
+  console.error(error);
   telemetry.event('broker_crashed', { success: false, errorCategory: 'BROKER', errorCode: 'UNCAUGHT_EXCEPTION', metadata: { message: error.message } });
   process.exit(1);
 });
 process.on('unhandledRejection', error => {
+  console.error(error);
   telemetry.event('broker_crashed', { success: false, errorCategory: 'BROKER', errorCode: 'UNHANDLED_REJECTION', metadata: { message: error?.message || String(error) } });
   process.exit(1);
 });
