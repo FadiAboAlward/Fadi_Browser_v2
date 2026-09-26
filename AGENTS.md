@@ -26,11 +26,15 @@ It exists because fixed persistent browsers do not scale cleanly to several conc
 14. **Tool risk metadata must reflect actual semantics; do not mark routine read-only or local-only actions as destructive without justification.**
 15. **Interactive browser status must make window visibility/state diagnosable.**
 16. **If the user already authorized end-to-end implementation, do not stop after writing a plan merely to ask for plan approval. Continue through implementation and QA unless a genuinely new consequential decision or irreducible human action is required.**
+17. **Client identity and browser-slot identity are separate. Do not permanently bind a shared-pool client to one physical slot.**
+18. **`concurrency_limit` is not proof that the same number of persistent slots exists; inspect the actual pool.**
+19. **For the production shared pool, preserve visible, interactive installed Chrome and per-slot persistent state. Human intervention happens in the same browser; do not add takeover/pause machinery unless a demonstrated problem requires it.**
 
 ## V1 lessons are design inputs
 
 Before changing broker, MCP, queue, lease, diagnostics, or permission behavior, read:
 
+- docs/IMPLEMENTATION_PLAYBOOK.md
 - docs/V1_LESSONS_APPLIED.md
 - docs/CLIENT_INTEGRATION.md
 - docs/adr/ADR-002-server-side-lease-binding.md
@@ -131,11 +135,12 @@ The goal is accurate metadata, not weaker safeguards.
 1. Read this file.
 2. Read ARCHITECTURE.md.
 3. Read project-manifest.yaml.
-4. Read docs/V1_LESSONS_APPLIED.md.
-5. Read relevant ADRs.
-6. Run status and doctor if runtime access exists.
-7. Review sanitized diagnostics and metrics before guessing at a problem.
-8. Create a branch for non-trivial changes.
+4. Read docs/IMPLEMENTATION_PLAYBOOK.md.
+5. Read docs/V1_LESSONS_APPLIED.md.
+6. Read relevant ADRs.
+7. Run status and doctor if runtime access exists.
+8. Review sanitized diagnostics and metrics before guessing at a problem.
+9. Create a branch for non-trivial changes.
 
 ## When fixing a bug
 
@@ -195,5 +200,7 @@ Do not rely on conversation memory. A future agent should be able to understand 
 - no unnecessary permission prompt is introduced by ordinary lease lifecycle behavior;
 - diagnostics remain secret-safe;
 - V1 regression check passes where relevant;
+- for deployment, the approved commit is contained in `origin/main` and the running commit is verified explicitly;
+- post-deploy smoke test ends with clean release and zero active/queued sessions;
 - docs updated;
 - no secrets introduced.

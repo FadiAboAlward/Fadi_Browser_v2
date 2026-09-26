@@ -35,6 +35,16 @@ test('same_task_actions_resolve_server_side_lease', async () => {
   assert.deepEqual(calls.at(-1)[1], { clientId: 'client-a', leaseToken: 'r'.repeat(64), url: 'https://example.com' });
 });
 
+test('browser_acquire exposes optional pool without letting the caller choose a slot', async () => {
+  const { server, calls } = fixture();
+  const properties = server._toolInputSchemaJson.browser_acquire.properties;
+  assert.ok('pool_id' in properties);
+  assert.equal('browser_slot_id' in properties, false);
+  await call(server, 'browser_acquire', { client_id: 'client-a', pool_id: 'default' });
+  assert.equal(calls.at(-1)[1].poolId, 'default');
+  assert.equal(calls.at(-1)[1].authProfileId, undefined);
+});
+
 test('no_public_credential_needed_for_browser_action', async () => {
   const { server } = fixture();
   const ordinary = ['browser_status', 'browser_release', 'browser_navigate', 'browser_snapshot', 'browser_get_url', 'browser_get_title', 'browser_evaluate', 'browser_command', 'browser_restore_window'];
@@ -56,6 +66,29 @@ test('transport_refresh_retains_task_ownership', async () => {
   assert.equal(calls.at(-1)[1].clientId, 'client-a');
   assert.equal(calls.at(-1)[1].leaseToken, 'r'.repeat(64));
 });
+
+for (const clientId of ['goilot-gpt', 'fadi-gpt']) {
+  test(`${clientId} chat identity retains ownership across distinct MCP servers`, async () => {
+    const calls = [];
+    const backend = {
+      acquire: async input => { calls.push(['acquire', input]); return { lease_token: 'r'.repeat(64), status: 'ACTIVE' }; },
+      navigate: input => { calls.push(['navigate', input]); return { ok: true }; },
+      release: input => { calls.push(['release', input]); return { status: 'CLOSED' }; }
+    };
+    const chatA = { clientId: null, leaseToken: null };
+    const chatB = { clientId: null, leaseToken: null };
+    const acquireServer = createBrokerMcpServer(backend, '0.1.0', clientId, chatA);
+    const navigateServer = createBrokerMcpServer(backend, '0.1.0', clientId, chatA);
+    const otherChatServer = createBrokerMcpServer(backend, '0.1.0', clientId, chatB);
+    await call(acquireServer, 'browser_acquire', { pool_id: 'default' });
+    assert.equal((await call(otherChatServer, 'browser_navigate', { url: 'https://example.com' })).isError, true);
+    assert.equal((await call(navigateServer, 'browser_navigate', { url: 'https://example.com' })).isError, undefined);
+    assert.deepEqual(calls.at(-1)[1], { clientId, leaseToken: 'r'.repeat(64), url: 'https://example.com' });
+    const releaseServer = createBrokerMcpServer(backend, '0.1.0', clientId, chatA);
+    assert.equal((await call(releaseServer, 'browser_release')).isError, undefined);
+    assert.equal((await call(navigateServer, 'browser_navigate', { url: 'https://example.com' })).isError, true);
+  });
+}
 
 test('fresh_chat_has_no_inherited_lease', async () => {
   const first = fixture();

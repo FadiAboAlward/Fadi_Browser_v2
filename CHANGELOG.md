@@ -4,6 +4,23 @@ All notable project changes should be documented here.
 
 ## Unreleased
 
+- Documentation now includes the production implementation playbook and final rollout lessons.
+
+## 0.1.0 — 2026-09-25
+
+Production Browser V2 rollout completed and verified.
+
+- Added five persistent visible Chrome slots behind the shared broker pool.
+- Decoupled client identity from browser-slot allocation.
+- Verified release/reacquire and restart persistence for authenticated slots.
+- Verified real-client paths for Fadi GPT, Goilot GPT, and Claude Desktop.
+- Verified human interaction followed by AI continuation in the same visible browser.
+- Verified five-slot concurrency, bounded queue behavior, independent release, and clean final state.
+- Deployed approved commit `1beadd42b7e964d54cc96853d4b920e644f2af85` and passed the post-deploy Example Domain/Sentry smoke test.
+- Confirmed V1 Edge can coexist functionally with V2; a separate legacy V1 Chrome worker issue was not caused by V2 and did not block release.
+
+### Included work
+
 - Added strict bounded FIFO queue promotion, cancellation, timeout telemetry, and per-client fairness enforcement.
 - Bound routine MCP browser operations to stateful transport sessions and removed public routine lease/client arguments.
 - Added portable versus profile-bound auth enforcement with engine known-good restore validation.
@@ -49,7 +66,7 @@ All notable project changes should be documented here.
 - Auth profiles now classified as portable or profile-bound.
 - Per-client concurrency fairness cap added (initial recommendation: 3).
 
-## Planned 0.1.0
+## 0.1.0 milestone contents
 
 Initial working V2 broker milestone:
 

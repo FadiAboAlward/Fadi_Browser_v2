@@ -2,7 +2,8 @@
 
 > A local-first, multi-session browser automation broker for AI agents.
 
-**Current status:** 0.1.0 implementation candidate; blocking local QA is required before production-ready claims
+**Current status:** Production — LIVE AND VERIFIED on 25 Sep 2026
+**Verified production code baseline:** `1beadd42b7e964d54cc96853d4b920e644f2af85`
 **Repository role:** public source of truth for architecture, code, tests, and documentation
 **Runtime role:** local machine keeps authentication state, cookies, tokens, logs, and private mappings
 
@@ -10,11 +11,11 @@
 
 Fadi Browser V2 هو طبقة تشغيل متصفحات ديناميكية لعدة وكلاء ذكاء اصطناعي في الوقت نفسه. الهدف هو أن يتمكن ChatGPT أو Claude أو Codex أو أي MCP client من طلب جلسة متصفح مستقلة، مرتبطة بهوية تسجيل دخول محددة، والعمل بالتوازي بدون سرقة tabs أو خلط cookies أو إجبار المستخدم على تسجيل الخروج والدخول بين الحسابات.
 
-النظام الجديد يعمل بجانب Fadi Playwright V1 ولا يستبدله أثناء مرحلة الاختبار.
+النظام الجديد يعمل بجانب Fadi Playwright V1 كنظام مستقل. تم التحقق وظيفيًا من تعايش V1 Edge مع V2؛ أي عطل في عامل V1 منفصل لا يُعامل تلقائيًا كخلل في V2 بدون دليل.
 
 V2 مبني أيضًا على الدروس المؤكدة من تشغيل V1 الفعلي. أهم هذه الدروس: إبقاء ملكية الـlease داخل الـbroker قدر الإمكان بدل جعل الـAI يعيد إرسال قيمة حساسة المظهر في كل أداة، توفير Queue قابلة للاستخدام فعلًا عند امتلاء السعة، وإظهار حالة نافذة المتصفح وتشخيصها بوضوح.
 
-راجع: docs/V1_LESSONS_APPLIED.md
+ابدأ من `docs/IMPLEMENTATION_PLAYBOOK.md` إذا كنت تريد إعادة تنفيذ النظام أو صيانته من الصفر، ثم راجع `docs/V1_LESSONS_APPLIED.md` للتاريخ والدروس السابقة.
 
 ## Why this project exists
 
@@ -95,6 +96,7 @@ We want to know session volume, success rate, queue wait, P50/P95 latency, peak 
 - SECURITY.md — secret/auth/logging security model.
 - OPERATIONS.md — lifecycle and operational expectations.
 - docs/PROJECT_CONTEXT.md — detailed problem statement and history.
+- docs/IMPLEMENTATION_PLAYBOOK.md — proven production build sequence, rollout lessons, real-client pitfalls, and final verification checklist.
 - docs/AI_HANDOFF.md — how a new AI agent should take over safely.
 - docs/AUTH_ARCHITECTURE.md — identities, state, OAuth, MFA.
 - docs/V1_LESSONS_APPLIED.md — confirmed V1 lessons translated into V2 requirements.
@@ -108,9 +110,9 @@ We want to know session volume, success rate, queue wait, P50/P95 latency, peak 
 
 ## Maturity
 
-Production readiness requires blocking QA, including concurrent isolation, queue behavior, fresh-chat/reconnect ownership tests, and a regression check proving V1 still works.
+The initial production target is complete: five persistent shared browser slots, real-client verification for Fadi GPT, Goilot GPT, and Claude Desktop, persistence across release/reacquire and restart, queue/capacity verification, and post-deploy smoke testing all passed on 25 Sep 2026.
 
-Initial target: **5 concurrent isolated sessions**.
+Future production changes must continue to pass the blocking QA defined in `docs/QA_STRATEGY.md` and the rollout checklist in `docs/IMPLEMENTATION_PLAYBOOK.md`.
 
 ## Implemented runtime
 
@@ -121,6 +123,11 @@ Initial target: **5 concurrent isolated sessions**.
 - Stateful MCP transport sessions keep lease ownership server-side; routine browser tool schemas do not expose `lease_token` or `client_id`.
 - Strict bounded FIFO queue with cancellation, timeout, visible telemetry, and configurable per-client caps.
 - Portable identities use known-good restore validation; profile-bound identities require a dedicated V2-owned profile path and serialize access.
+- For the one-browser `goilot` proof, optional `externalChrome` attaches to an installed, visible Chrome on a dedicated loopback CDP port. Release frees the AI lease while leaving the Chrome window and persistent profile intact; subsequent acquire reattaches or starts Chrome with that same profile if the user closed it. Do not point another Chrome process at the same live profile. This option is Windows-only and does not change the shared broker or other client mappings.
+
+For this opt-in, set `authProfiles.goilot.headed: true`, `authProfiles.goilot.mode: "profile_bound"`, and `authProfiles.goilot.externalChrome` with `executablePath` (the installed `chrome.exe`) and an unused local `cdpPort` in the private runtime `config.json`. Never use the default personal Chrome user-data directory; V2 keeps the dedicated `auth\goilot` directory. The CDP port provides full local control of that browser, so use it only on a trusted machine and do not expose it beyond loopback.
+
+For a shared persistent pool, the private runtime configuration uses `browserPools.default.slots` mapping five slot aliases to separate profile-bound identities, each with its own user-data directory and CDP port. The production pool contains `browser-1` through `browser-5`; authentication is persistent per slot and is not copied automatically between slots. Grant `allowedPools: ["default"]` to participating clients and `defaultPool: "default"` only when their no-argument acquire should switch to the pool; otherwise no-argument acquire retains its legacy default. Keep legacy `allowedAuthProfiles` unchanged. `pool_id` selects an allowed pool, while an explicit legacy `auth_profile_id` follows the original per-client allowlist. Never copy a live profile directory to initialize another slot.
 - Runtime root: `%LOCALAPPDATA%\FadiBrowserV2`.
 - SQLite: `%LOCALAPPDATA%\FadiBrowserV2\data\telemetry.sqlite`.
 - JSONL: `%LOCALAPPDATA%\FadiBrowserV2\logs\events.jsonl`.

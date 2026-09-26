@@ -17,11 +17,11 @@ config.namespace = `fadi-browser-v2-qa-${randomUUID()}`;
 config.authProfiles['auth-profile-a'] = { persistent: true, mode: 'profile_bound', profilePath };
 config.authProfiles['auth-profile-b'] = { persistent: true, mode: 'portable' };
 config.authProfiles['public'] = { persistent: false, mode: 'portable' };
-config.clients = {
+config.clients = Object.assign({}, config.clients, {
   'client-a': { defaultAuthProfile: 'auth-profile-a', allowedAuthProfiles: ['auth-profile-a'] },
   'client-b': { defaultAuthProfile: 'auth-profile-b', allowedAuthProfiles: ['auth-profile-b'] },
   'maintenance': { defaultAuthProfile: 'public', allowedAuthProfiles: ['public'] }
-};
+});
 const configPath = path.join(runtimeRoot, 'config.json');
 writeFileSync(configPath, JSON.stringify(config, null, 2));
 

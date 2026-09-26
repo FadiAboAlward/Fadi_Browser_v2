@@ -7,8 +7,9 @@ import { LeaseBroker } from '../src/broker.mjs';
 import { Telemetry } from '../src/telemetry.mjs';
 
 class FakeEngine {
-  constructor() { this.sessions = new Map(); }
-  async createSession(sessionId) {
+  constructor() { this.sessions = new Map(); this.createdOptions = []; }
+  async createSession(sessionId, authProfileId, options) {
+    this.createdOptions.push({ authProfileId, options });
     this.sessions.set(sessionId, { url: 'about:blank', title: '' });
     return { ok: true, diagnostics: { executable: 'fake-chrome', process_id: 42, window_state: 'HIDDEN', visible: false, safe_window_id: 'pid-42', active_title: null } };
   }
@@ -20,6 +21,7 @@ class FakeEngine {
   async run(sessionId, args) { return { ok: true, output: { sessionId, args } }; }
   async closeSession(sessionId) { this.sessions.delete(sessionId); return { ok: true }; }
   async sessionInfo(sessionId) { if (!this.sessions.has(sessionId)) throw new Error('gone'); return { ok: true }; }
+  setSessionHeaded() {}
   async restoreWindow(sessionId) {
     if (!this.sessions.has(sessionId)) throw new Error('gone');
     return { executable: 'fake-chrome', process_id: 42, window_state: 'NORMAL', visible: true, safe_window_id: 'pid-42', active_title: null };
@@ -62,6 +64,127 @@ function fixture() {
   return { root, config, telemetry, engine, broker };
 }
 
+function enableTwoSlotPool(f) {
+  f.config.authProfiles['bound-profile'].headed = true;
+  f.config.authProfiles['bound-profile-2'] = { persistent: true, mode: 'profile_bound', headed: true };
+  f.config.browserPools = { default: { slots: [
+    { id: 'browser-1', authProfileId: 'bound-profile' },
+    { id: 'browser-2', authProfileId: 'bound-profile-2' }
+  ] } };
+  f.config.clients['client-a'].allowedPools = ['default'];
+  f.config.clients['client-b'].allowedPools = ['default'];
+  f.config.clients['client-a'].defaultPool = 'default';
+  f.config.clients['client-b'].defaultPool = 'default';
+}
+
+test('shared pool allocates distinct persistent slots across clients and preserves lease ownership', async () => {
+  const f = fixture();
+  enableTwoSlotPool(f);
+  try {
+    const a = await f.broker.acquire({ clientId: 'client-a' });
+    const b = await f.broker.acquire({ clientId: 'client-b' });
+    assert.equal(a.browser_slot_id, 'browser-1');
+    assert.equal(b.browser_slot_id, 'browser-2');
+    assert.notEqual(a.auth_profile_id, b.auth_profile_id);
+    assert.equal(f.broker.activeCount(), 2);
+    await assert.rejects(() => f.broker.acquire({ clientId: 'maintenance', authProfileId: 'bound-profile' }), error => error.code === 'AUTH_PROFILE_BUSY');
+    await assert.rejects(() => f.broker.getUrl({ clientId: 'client-a', leaseToken: b.lease_token }), error => error.code === 'LEASE_OWNER_MISMATCH');
+    await f.broker.release({ clientId: 'client-a', leaseToken: a.lease_token });
+    assert.equal(f.broker.status({ clientId: 'client-b', leaseToken: b.lease_token }).status, 'ACTIVE');
+    assert.equal(f.broker.status().browser_pools.default.slots[0].state, 'FREE');
+    assert.equal(f.broker.status().browser_pools.default.slots[1].state, 'BUSY');
+    await f.broker.release({ clientId: 'client-b', leaseToken: b.lease_token });
+    assert.equal(f.broker.activeCount(), 0);
+    assert.equal(f.broker.queue.length, 0);
+    const again = await f.broker.acquire({ clientId: 'client-b', poolId: 'default' });
+    assert.equal(again.browser_slot_id, 'browser-1');
+    assert.equal(again.auth_profile_id, a.auth_profile_id);
+    await f.broker.release({ clientId: 'client-b', leaseToken: again.lease_token });
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('shared pool does not grant direct access to another auth profile', async () => {
+  const f = fixture();
+  enableTwoSlotPool(f);
+  try {
+    await assert.rejects(() => f.broker.acquire({ clientId: 'client-a', authProfileId: 'bound-profile-2' }), error => error.code === 'AUTH_PROFILE_DENIED');
+    await assert.rejects(() => f.broker.acquire({ clientId: 'maintenance', poolId: 'default' }), error => error.code === 'POOL_DENIED');
+    await assert.rejects(() => f.broker.acquire({ clientId: 'client-a', poolId: 'default', authProfileId: 'bound-profile' }), error => error.code === 'AMBIGUOUS_ACQUIRE_TARGET');
+    const legacy = await f.broker.acquire({ clientId: 'maintenance', authProfileId: 'bound-profile' });
+    const pooled = await f.broker.acquire({ clientId: 'client-a' });
+    assert.equal(pooled.browser_slot_id, 'browser-2');
+    await f.broker.release({ clientId: 'maintenance', leaseToken: legacy.lease_token });
+    await f.broker.release({ clientId: 'client-a', leaseToken: pooled.lease_token });
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('pool allowlist without defaultPool preserves legacy no-argument routing', async () => {
+  const f = fixture();
+  enableTwoSlotPool(f);
+  f.config.clients.maintenance.allowedPools = ['default'];
+  try {
+    const legacy = await f.broker.acquire({ clientId: 'maintenance' });
+    assert.equal(legacy.auth_profile_id, 'public');
+    assert.equal(legacy.browser_slot_id, null);
+    await f.broker.release({ clientId: 'maintenance', leaseToken: legacy.lease_token });
+    const pooled = await f.broker.acquire({ clientId: 'maintenance', poolId: 'default' });
+    assert.equal(pooled.browser_slot_id, 'browser-1');
+    await f.broker.release({ clientId: 'maintenance', leaseToken: pooled.lease_token });
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('shared pool queued request selects a newly free slot without disturbing the other lease', async () => {
+  const f = fixture();
+  enableTwoSlotPool(f);
+  try {
+    const a = await f.broker.acquire({ clientId: 'client-a' });
+    const b = await f.broker.acquire({ clientId: 'client-b' });
+    const pending = f.broker.acquire({ clientId: 'client-a', waitTimeoutMs: 2000 });
+    assert.equal(f.broker.queue.length, 1);
+    await f.broker.release({ clientId: 'client-a', leaseToken: a.lease_token });
+    const promoted = await pending;
+    assert.equal(promoted.browser_slot_id, 'browser-1');
+    assert.equal(f.broker.status({ clientId: 'client-b', leaseToken: b.lease_token }).status, 'ACTIVE');
+    await f.broker.release({ clientId: 'client-a', leaseToken: promoted.lease_token });
+    await f.broker.release({ clientId: 'client-b', leaseToken: b.lease_token });
+    assert.equal(f.broker.status().sessions_queued, 0);
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('shared pool bounded wait times out without stealing either live slot', async () => {
+  const f = fixture();
+  enableTwoSlotPool(f);
+  try {
+    const a = await f.broker.acquire({ clientId: 'client-a' });
+    const b = await f.broker.acquire({ clientId: 'client-b' });
+    await assert.rejects(() => f.broker.acquire({ clientId: 'client-a', waitTimeoutMs: 50 }), error => error.code === 'QUEUE_TIMEOUT');
+    assert.equal(f.broker.activeCount(), 2);
+    assert.equal(f.broker.queue.length, 0);
+    await f.broker.release({ clientId: 'client-a', leaseToken: a.lease_token });
+    await f.broker.release({ clientId: 'client-b', leaseToken: b.lease_token });
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
 test('acquire_returns_single_active_lease', async () => {
   const f = fixture();
   try {
@@ -69,6 +192,23 @@ test('acquire_returns_single_active_lease', async () => {
     assert.equal(lease.status, 'ACTIVE');
     assert.equal(f.broker.activeCount(), 1);
     await f.broker.release({ clientId: 'maintenance', leaseToken: lease.lease_token });
+  } finally {
+    await f.broker.shutdown({ preserveRecoverable: true });
+    f.telemetry.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('profile_headed_override_applies_only_to_selected_identity', async () => {
+  const f = fixture();
+  try {
+    f.config.authProfiles['bound-profile'].headed = true;
+    const visible = await f.broker.acquire({ clientId: 'maintenance', authProfileId: 'bound-profile' });
+    assert.equal(f.engine.createdOptions.at(-1).options.headed, true);
+    await f.broker.release({ clientId: 'maintenance', leaseToken: visible.lease_token });
+    const ordinary = await f.broker.acquire({ clientId: 'maintenance', authProfileId: 'public' });
+    assert.equal(f.engine.createdOptions.at(-1).options.headed, undefined);
+    await f.broker.release({ clientId: 'maintenance', leaseToken: ordinary.lease_token });
   } finally {
     await f.broker.shutdown({ preserveRecoverable: true });
     f.telemetry.close();
@@ -131,6 +271,28 @@ test('broker_restart_recover_validates_ingress', async () => {
     await assert.rejects(() => broker2.recover({ clientId: 'client-a', leaseToken: lease.lease_token }), error => error.code === 'LEASE_OWNER_MISMATCH');
     const recovered = await broker2.recover({ clientId: 'maintenance', leaseToken: lease.lease_token });
     assert.equal(recovered.status, 'ACTIVE');
+    await broker2.release({ clientId: 'maintenance', leaseToken: lease.lease_token });
+  } finally {
+    await broker2.shutdown({ preserveRecoverable: true });
+    telemetry2.close();
+    rmSync(f.root, { recursive: true, force: true });
+  }
+});
+
+test('recovering an external Chrome lease preserves its CDP binding', async () => {
+  const f = fixture();
+  f.config.authProfiles['bound-profile'].headed = true;
+  f.config.authProfiles['bound-profile'].profilePath = path.join(f.root, 'auth', 'bound-profile');
+  f.config.authProfiles['bound-profile'].externalChrome = { executablePath: 'chrome.exe', cdpPort: 8955 };
+  const lease = await f.broker.acquire({ clientId: 'maintenance', authProfileId: 'bound-profile' });
+  await f.broker.shutdown({ preserveRecoverable: true });
+  f.telemetry.close();
+  const telemetry2 = new Telemetry(f.config, { brokerVersion: 'test', engineVersion: 'test' });
+  const freshEngine = new FakeEngine();
+  const broker2 = new LeaseBroker(f.config, telemetry2, freshEngine, { brokerVersion: 'test', engineVersion: 'test' });
+  try {
+    await broker2.recover({ clientId: 'maintenance', leaseToken: lease.lease_token });
+    assert.deepEqual(freshEngine.createdOptions.at(-1).options.externalChrome, f.config.authProfiles['bound-profile'].externalChrome);
     await broker2.release({ clientId: 'maintenance', leaseToken: lease.lease_token });
   } finally {
     await broker2.shutdown({ preserveRecoverable: true });

@@ -118,3 +118,39 @@ Auth-state deletion should be explicit and separately confirmed if the implement
 ## Explicit deployment
 
 `deploy.ps1` fetches the approved commit, requires a clean repository, verifies that the commit is contained in `origin/main`, creates an immutable local deployment directory, installs exact dependencies, runs tests and secret scanning, switches the runtime pointer, starts V2, and performs a browser smoke test. Failure attempts rollback to the previous healthy deployment.
+
+
+## Production shared-pool operating model
+
+The production V2 pool uses five fixed persistent Chrome slots. Each slot has its own profile state and is exclusive while leased.
+
+Operational expectations:
+
+- Chrome remains visible and interactive.
+- A user may complete OTP, MFA, CAPTCHA, verification, or account selection in the same window.
+- The AI continues in that same browser afterward.
+- Release frees logical AI ownership while preserving persistent authentication state.
+- Normal release must not clear cookies or rebuild the profile.
+- Do not run two Chrome processes against the same live user-data directory.
+
+A healthy production idle state is:
+
+- five slots FREE;
+- zero active sessions;
+- zero queued sessions.
+
+## Production smoke test
+
+After a deployment or runtime change:
+
+1. confirm broker, MCP, and browser engine are healthy;
+2. confirm five slots exist and the pool starts clean;
+3. acquire from the default shared pool;
+4. navigate to `https://example.com`;
+5. verify `Example Domain` in the snapshot;
+6. open a known authenticated service and verify persistence;
+7. release;
+8. verify the lease is CLOSED;
+9. verify all five slots are FREE and active/queued counts are zero.
+
+Do not treat an unrelated V1 worker outage as a V2 deployment failure without evidence of shared-resource regression.

@@ -177,7 +177,7 @@ The goal is accurate metadata and lower unnecessary friction, not weaker safety.
 
 ## V1 relationship
 
-V2 is intentionally side-by-side with the existing broker during evaluation.
+V2 is intentionally side-by-side with the existing broker in production.
 
 No shared profile directories, runtime state, ports, broker databases, log directories, or service identifiers.
 
@@ -201,6 +201,24 @@ Capacity uses a bounded strict-FIFO queue. A caller opts into a bounded wait on 
 
 Portable auth uses the pinned engine's `restore-save=auto` known-good behavior with optional URL/text/function validation. Profile-bound auth requires a dedicated path under the V2 runtime auth directory and is serialized; it is never silently downgraded to cookie-only restore.
 
+### Visible installed Chrome model
+
+The production browser slots use the `externalChrome` pattern with an installed Chrome executable and a dedicated loopback CDP port per slot. V2 starts Chrome with its V2-owned persistent user-data directory only when no process already owns that profile, verifies that the CDP listener belongs to that executable/profile, and attaches agent-browser without replacing the browser. External sessions use a dedicated agent-browser namespace so a previous engine-owned browser in the ordinary namespace cannot be reused instead of the CDP target. Each browser is a normal visible, interactive Windows process.
+
+The broker grants one exclusive lease per slot. `browser_release` closes the agent-browser CDP session and frees logical ownership, while the Chrome profile state remains persistent. A later acquire reattaches; if the user closed Chrome, V2 starts the installed executable with the same profile. Human interaction occurs in this same visible browser and does not require a separate takeover state machine.
+
+ChatGPT's secure tunnel may create a new MCP transport session for every tool call. The two explicitly pre-bound ChatGPT endpoints, `goilot-gpt` and `fadi-gpt`, therefore select a server-side task context from a hash of the client ID and trusted ingress subject/session headers. Missing headers fail closed to ordinary transport-session binding. This changes no lease, pool, or browser ownership rule; a fresh chat or different client cannot inherit another context.
+
+The CDP port grants local browser control, so it must listen on loopback only and be used on a trusted local machine. V2 refuses a mismatched listener or another process already using the profile; it never starts a second Chrome against that live directory. It uses the native `connect <port>` operation and does not repeat `--headed` on externally attached commands: doing so can change agent-browser's launch configuration and silently replace the CDP target with an engine-owned browser. Before a lease becomes ACTIVE, V2 compares the session's CDP target IDs against the configured Chrome port and fails closed on a mismatch. Google and Sentry authentication persistence were verified during rollout, but the mechanism itself still must not be treated as proof for a new provider or new environment.
+
+### Shared persistent browser slots
+
+The production `browserPools.default.slots` list maps `browser-1` through `browser-5` to distinct profile-bound auth identities. Client policy grants `allowedPools` separately from legacy `allowedAuthProfiles`; `defaultPool` opts a client into no-argument shared allocation without silently changing other clients' defaults. The broker chooses the first free slot and returns its safe `browser_slot_id`. The client cannot select an arbitrary slot through the shared flow. Its trusted `client_id` and exclusive lease remain unchanged.
+
+Each slot uses a unique persistent user-data directory and loopback CDP port with installed, visible, interactive Chrome. The same profile is never acquired concurrently. A legacy explicit `auth_profile_id` request retains its previous allowlist, and occupying that profile also makes its pool slot busy. A pooled grant does not grant direct access to another auth profile. Strict FIFO waits re-evaluate the first free slot at promotion rather than pinning a busy profile when the request joins the queue.
+
+The rollout began with `browser-1` and `browser-2`, then expanded to `browser-3`, `browser-4`, and `browser-5` as separate profile-bound Chrome directories on separate loopback CDP ports. No cookies or logins are copied between slots. All five were acquired concurrently as visible Chrome processes; a sixth immediate request received `POOL_EXHAUSTED`, while a bounded queued request received the slot freed by release. Real-client verification then passed for Fadi GPT, Goilot GPT, and Claude Desktop. The production deployment from commit `1beadd42b7e964d54cc96853d4b920e644f2af85` passed the post-deploy smoke test and ended with five FREE slots, zero active sessions, and zero queued sessions. The global broker cap remains separate from the number of configured slots. Visibility does not add takeover, pause/resume, or shared-session coordination.
+
 ## Failure philosophy
 
 Ownership and isolation failures are more severe than ordinary navigation failures.
@@ -214,3 +232,6 @@ Telemetry describes the browser infrastructure, not user page content.
 Allowed examples include duration, operation name, error category, sanitized origin, resource usage, session lifecycle, queue state, window-state diagnostics, and ownership violations.
 
 Disallowed examples include passwords, cookies, auth headers, OTPs, full private URLs, DOM content, and private screenshots by default.
+
+
+See `docs/adr/ADR-005-shared-persistent-browser-pool.md` and `docs/IMPLEMENTATION_PLAYBOOK.md` for the accepted production model and the proven rollout sequence.

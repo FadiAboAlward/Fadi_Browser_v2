@@ -9,6 +9,7 @@ import { AgentBrowserEngine } from './engine.mjs';
 import { LeaseBroker } from './broker.mjs';
 import { BrokerError, asBrokerError } from './errors.mjs';
 import { createBrokerMcpServer } from './mcp.mjs';
+import { chatgptTaskKey } from './chatgpt-task-key.mjs';
 import { Telemetry, telemetryPaths } from './telemetry.mjs';
 import { nowIso } from './util.mjs';
 
@@ -31,7 +32,6 @@ if (!process.env.AGENT_BROWSER_ENCRYPTION_KEY || !/^[a-fA-F0-9]{64}$/.test(proce
 const telemetry = new Telemetry(config, versions);
 const engine = new AgentBrowserEngine(config);
 const broker = new LeaseBroker(config, telemetry, engine, versions);
-
 const chatgptTaskContexts = new Map();
 
 const mcpHandler = createMcpHandler(async (ctx) => {
@@ -40,15 +40,26 @@ const mcpHandler = createMcpHandler(async (ctx) => {
   const preboundClientId = parts.length > 2 && parts[2] ? parts[2] : null;
 
   let taskContext = undefined;
-  const subject = ctx.requestInfo.headers.get('x-openai-subject');
-  const session = ctx.requestInfo.headers.get('x-openai-session');
   
-  if (subject || session) {
-    const chatgptTaskKey = `${preboundClientId || 'none'}:${subject || ''}:${session || ''}`;
-    if (!chatgptTaskContexts.has(chatgptTaskKey)) {
-      chatgptTaskContexts.set(chatgptTaskKey, { clientId: null, leaseToken: null });
+  // Create an object that provides array-like bracket access for headers
+  const headersObject = {};
+  for (const [key, value] of ctx.requestInfo.headers.entries()) {
+    headersObject[key] = value;
+  }
+  const taskKey = chatgptTaskKey(headersObject, preboundClientId);
+  
+  if (taskKey) {
+    const now = Date.now();
+    for (const [key, entry] of chatgptTaskContexts) {
+      if (now - entry.lastSeen > config.leaseTtlMs + config.recoveryWindowMs + 60000) chatgptTaskContexts.delete(key);
     }
-    taskContext = chatgptTaskContexts.get(chatgptTaskKey);
+    let entry = chatgptTaskContexts.get(taskKey);
+    if (!entry) {
+      entry = { context: { clientId: null, leaseToken: null }, lastSeen: now };
+      chatgptTaskContexts.set(taskKey, entry);
+    }
+    entry.lastSeen = now;
+    taskContext = entry.context;
   }
 
   return createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId, taskContext);
@@ -57,7 +68,6 @@ const mcpHandler = createMcpHandler(async (ctx) => {
 const nodeMcpHandler = toNodeHandler(mcpHandler, {
   onerror: error => { console.error('MCP ERR', error); telemetry.event('tool_failed', { operation: 'mcp_transport', success: false, errorCategory: 'MCP_TRANSPORT', errorCode: 'MCP_ADAPTER_ERROR', metadata: { message: error?.message } }); }
 });
-
 const validateHost = localhostHostValidation();
 const validateOrigin = localhostOriginValidation();
 
@@ -89,7 +99,7 @@ const httpServer = createServer(async (req, res) => {
 
 async function routeApi(route, body) {
   switch (route) {
-    case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, taskLabel: body.task_label, waitTimeoutMs: body.wait_timeout_ms });
+    case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, poolId: body.pool_id, taskLabel: body.task_label, waitTimeoutMs: body.wait_timeout_ms });
     case '/v1/status': return broker.status({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/recover': return broker.recover({ clientId: body.client_id, leaseToken: body.lease_token });
     case '/v1/release': return broker.release({ clientId: body.client_id, leaseToken: body.lease_token });
@@ -200,6 +210,8 @@ httpServer.listen(config.port, config.host, () => {
   writeRunningState();
   telemetry.event('health_check', { success: true, concurrencyCount: broker.activeCount(), metadata: { endpoint: `http://${config.host}:${config.port}` } });
 });
+
+
 
 
 

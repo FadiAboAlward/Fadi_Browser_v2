@@ -5,8 +5,8 @@ const config = loadConfig();
 const token = process.env.FADI_BROWSER_V2_API_TOKEN;
 if (!token) throw new Error('FADI_BROWSER_V2_API_TOKEN is required.');
 const client = new Client({ name: 'fadi-browser-v2-qa', version: '0.1.0' });
-const transport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp`), {
-  requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-session' } }
+const transport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp/fadi-gpt`), {
+  requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-session', 'x-openai-subject': 'user-1' } }
 });
 try {
   await client.connect(transport);
@@ -27,9 +27,9 @@ try {
     if (tool?.annotations?.readOnlyHint !== true || tool?.annotations?.destructiveHint !== false) throw new Error(`${name} risk metadata is incorrect.`);
   }
 
-  const acquired = parseToolJson(await client.callTool({ name: 'browser_acquire', arguments: { client_id: 'maintenance', wait: false, task_label: 'mcp-binding-qa' } }));
+  const acquired = parseToolJson(await client.callTool({ name: 'browser_acquire', arguments: { client_id: 'fadi-gpt', wait: false, task_label: 'mcp-binding-qa' } }));
   if (acquired.lease_token) throw new Error('browser_acquire exposed a routine lease_token.');
-  if (!acquired.recovery_credential) throw new Error('browser_acquire did not separate the recovery-only credential.');
+  console.log('acquired:', acquired); if (!acquired.recovery_credential) throw new Error('browser_acquire did not separate the recovery-only credential.');
   try {
     const navigated = await client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com/#mcp-server-binding' } });
     if (navigated.isError) {
@@ -45,8 +45,8 @@ try {
   }
 
   const freshClient = new Client({ name: 'fadi-browser-v2-fresh-chat-qa', version: '0.1.0' });
-  const freshTransport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp`), {
-    requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-fresh' } }
+  const freshTransport = new StreamableHTTPClientTransport(new URL(`http://${config.host}:${config.port}/mcp/fadi-gpt`), {
+    requestInit: { headers: { authorization: `Bearer ${token}`, 'x-openai-session': 'smoke-test-fresh', 'x-openai-subject': 'user-1' } }
   });
   try {
     await freshClient.connect(freshTransport);
