@@ -15,24 +15,17 @@ async function main() {
   const acquire = await client.callTool({ name: 'browser_acquire', arguments: { preference: 'EDGE', task_label: 'Goilot Claude Verification', task_mode: 'interactive' } });
   console.log('Acquire result:', JSON.stringify(acquire, null, 2));
 
-  let leaseToken = null;
   const acquireText = acquire.content.find(item => item.type === 'text')?.text;
-  if (acquireText) {
-    const data = JSON.parse(acquireText);
-    leaseToken = data.lease_token;
-  }
 
-  if (leaseToken) {
-    try {
-      console.log('Navigating to example.com...');
-      await client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com', lease_token: leaseToken } });
-      console.log('Taking snapshot...');
-      const snap = await client.callTool({ name: 'browser_snapshot', arguments: { lease_token: leaseToken } });
-      console.log('Snapshot keys:', Object.keys(JSON.parse(snap.content.find(item => item.type === 'text')?.text)));
-    } finally {
-      console.log('Releasing lease...');
-      await client.callTool({ name: 'browser_release', arguments: { lease_token: leaseToken } });
-    }
+  try {
+    console.log('Navigating to example.com...');
+    await client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com' } });
+    console.log('Taking snapshot...');
+    const snap = await client.callTool({ name: 'browser_snapshot', arguments: {} });
+    console.log('Snapshot keys:', Object.keys(JSON.parse(snap.content.find(item => item.type === 'text')?.text)));
+  } finally {
+    console.log('Releasing lease...');
+    await client.callTool({ name: 'browser_release', arguments: {} });
   }
 
   await transport.close();
