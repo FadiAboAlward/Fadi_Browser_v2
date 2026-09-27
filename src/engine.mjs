@@ -124,6 +124,42 @@ async screenshot(sessionId, options = {}) {
   }
 
   async resize(sessionId, width, height) {
+    const external = this.externalSessions.get(sessionId);
+    if (external && external.cdpPort) {
+      try {
+        const response = await fetch(`http://127.0.0.1:${external.cdpPort}/json/list`, { signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+          const pages = (await response.json()).filter(item => item.type === 'page');
+          if (pages.length > 0) {
+            const wsUrl = pages[0].webSocketDebuggerUrl;
+            await new Promise((resolve, reject) => {
+              const ws = new WebSocket(wsUrl);
+              ws.onopen = () => {
+                ws.send(JSON.stringify({
+                  id: 1,
+                  method: 'Emulation.setDeviceMetricsOverride',
+                  params: { width, height, deviceScaleFactor: 1, mobile: false }
+                }));
+              };
+              ws.onmessage = (msg) => {
+                try {
+                  const data = JSON.parse(msg.data);
+                  if (data.id === 1) {
+                    ws.close();
+                    resolve();
+                  }
+                } catch { }
+              };
+              ws.onerror = reject;
+              setTimeout(() => { ws.close(); reject(new Error('timeout')); }, 5000);
+            });
+            return { ok: true, durationMs: 0, output: { width, height }, error: null, success: true };
+          }
+        }
+      } catch (e) {
+        // Fall back to agent-browser CLI
+      }
+    }
     return this.run(sessionId, ['set', 'viewport', String(width), String(height)]);
   }
 
