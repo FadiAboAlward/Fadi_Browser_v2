@@ -1,5 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
 import { asBrokerError } from './errors.mjs';
 
 function resolveIdentity(boundContext) {
@@ -122,11 +124,60 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
 
   // --- Phase 1 QA capabilities ---
 
-  register(server, 'browser_screenshot', 'Capture a screenshot of the current page in the owned session.', z.object({
+  register(server, 'browser_screenshot', 'Capture a screenshot of the current page in the owned session. Returns a local file path and screenshot_id usable with browser_read_screenshot.', z.object({
     full_page: z.boolean().optional()
-  }), args => {
+  }), async args => {
     const { clientId, leaseToken } = resolveIdentity(boundContext);
-    return backend.screenshot({ clientId, leaseToken, fullPage: args.full_page });
+    const raw = await backend.screenshot({ clientId, leaseToken, fullPage: args.full_page });
+    // Extract path from agent-browser output
+    const filePath = raw?.output?.data?.path || raw?.output?.data?.file || raw?.path || raw?.file || null;
+    return {
+      ...raw,
+      screenshot_id: filePath,
+      screenshot_path: filePath
+    };
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+
+  register(server, 'browser_read_screenshot', 'Retrieve a screenshot captured by browser_screenshot as MCP image content (base64 PNG) suitable for HTML reports and remote clients. Pass the screenshot_id returned by browser_screenshot.', z.object({
+    screenshot_id: z.string().min(1)
+  }), async args => {
+    const screenshotId = args.screenshot_id;
+    // Security: only allow files that contain the agent-browser screenshot path pattern
+    const normalized = path.normalize(screenshotId);
+    const allowed = [
+      path.join(process.env.USERPROFILE || '', '.agent-browser', 'tmp', 'screenshots'),
+      path.join(process.env.LOCALAPPDATA || '', 'FadiBrowserV2', 'qa'),
+      path.join(process.env.TEMP || '', ''),
+      path.join(process.env.TMP || '', '')
+    ].filter(Boolean);
+    const isAllowed = allowed.some(dir => dir && normalized.startsWith(path.normalize(dir)));
+    if (!isAllowed) {
+      // Fallback: allow if the filename looks like a screenshot (screenshot-*.png)
+      const basename = path.basename(normalized);
+      if (!/^screenshot-\d+\.(png|jpg|jpeg)$/i.test(basename)) {
+        throw new Error('screenshot_id must reference a file in the agent-browser screenshots directory');
+      }
+    }
+    if (!existsSync(normalized)) {
+      throw new Error(`Screenshot file not found: ${normalized}`);
+    }
+    const imageBuffer = readFileSync(normalized);
+    const base64 = imageBuffer.toString('base64');
+    const ext = path.extname(normalized).toLowerCase();
+    const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+    // Return proper MCP ImageContent for remote/report consumption
+    return {
+      content: [
+        {
+          type: 'image',
+          data: base64,
+          mimeType
+        }
+      ],
+      screenshot_id: screenshotId,
+      size_bytes: imageBuffer.length,
+      mime_type: mimeType
+    };
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
   register(server, 'browser_console_messages', 'Return console messages captured during the owned session.', z.object({
@@ -193,6 +244,15 @@ function register(server, name, description, inputSchema, callback, annotations)
   server.registerTool(name, { description, inputSchema, ...(annotations && { annotations }) }, async (args, extra) => {
     try {
       const result = await callback(args, extra);
+      // If the callback already provided MCP-compliant content (e.g. ImageContent), use it
+      if (result && Array.isArray(result.content)) {
+        return {
+          content: result.content,
+          isError: result.isError,
+          // Extract remaining keys as structuredContent if needed, minus the raw content array
+          structuredContent: result.structuredContent || normalizeStructured({ ...result, content: undefined })
+        };
+      }
       return {
         content: [{ type: 'text', text: JSON.stringify(result) }],
         structuredContent: normalizeStructured(result)

@@ -46,9 +46,15 @@ const mcpHandler = createMcpHandler(async (ctx) => {
   for (const [key, value] of ctx.requestInfo.headers.entries()) {
     headersObject[key] = value;
   }
-  const taskKey = chatgptTaskKey(headersObject, preboundClientId);
+    let taskKey = chatgptTaskKey(headersObject, preboundClientId);
+  if (!taskKey && (preboundClientId === 'goilot-claude' || preboundClientId === 'claude-web')) {
+    const claudeSession = headersObject['mcp-session-id'];
+    if (claudeSession) {
+      taskKey = 'claude:' + preboundClientId + ':' + claudeSession;
+    }
+  }
   
-  if (!taskKey) throw new Error('Missing valid task identity. Stateless HTTP POST transport requires stable context headers to bind the MCP lease.');
+  if (!taskKey) { taskContext = { clientId: null, leaseToken: null }; } else {
     const now = Date.now();
     for (const [key, entry] of chatgptTaskContexts) {
       if (now - entry.lastSeen > config.leaseTtlMs + config.recoveryWindowMs + 60000) chatgptTaskContexts.delete(key);
@@ -59,7 +65,8 @@ const mcpHandler = createMcpHandler(async (ctx) => {
       chatgptTaskContexts.set(taskKey, entry);
     }
     entry.lastSeen = now;
-    taskContext = entry.context;
+        taskContext = entry.context;
+      }
 
   return createBrokerMcpServer(broker, versions.brokerVersion, preboundClientId, taskContext);
 });
@@ -91,7 +98,8 @@ const httpServer = createServer(async (req, res) => {
     const result = await routeApi(url.pathname, body);
     sendJson(res, 200, result);
   } catch (error) {
-    const failure = asBrokerError(error, 'BROKER', 'HTTP_HANDLER_FAILED');
+    console.error('[HTTP 500 DEBUG]', error);
+      const failure = asBrokerError(error, 'BROKER', 'HTTP_HANDLER_FAILED');
     sendJson(res, failure.httpStatus || 500, failure.toJSON());
   }
 });
