@@ -122,6 +122,46 @@ If fully implicit server-side binding is technically impossible:
 - validate ownership server-side;
 - ensure platform metadata does not misrepresent it as an access token.
 
+
+## Multi-session addressing
+
+Implicit server-side binding remains the default and is the preferred path for ordinary single-session use.
+
+For workflows that intentionally own multiple browser sessions at once, routine browser operations may accept an optional non-secret `session_ref`.
+
+A `session_ref`:
+
+- is opaque and non-secret;
+- is not an authorization credential;
+- never replaces server-side ownership validation;
+- can address only a session already owned by the same trusted caller/task context;
+- must fail closed on cross-client or ambiguous ownership.
+
+Do not reintroduce routine public `lease_id`, lease-token, or recovery-credential arguments merely to support multi-session control.
+
+## Screenshot and artifact contract
+
+`browser_screenshot` should continue returning MCP ImageContent for immediate model consumption and should also return normalized structured metadata, including where available:
+
+- `browser_slot_id`;
+- `session_ref`;
+- `screenshot_id`;
+- MIME type;
+- width and height;
+- byte size;
+- SHA-256;
+- local path for local diagnostics only;
+- an MCP-native artifact/file reference when the host supports one.
+
+The Windows-local screenshot path is never sufficient as the only remote/report handoff mechanism.
+
+A stable `browser_screenshot_get({ screenshot_id })` path should allow the same captured image to be retrieved again without recapturing it.
+
+Prefer MCP-native resource/file references over introducing a separate HTTP artifact service unless the host environment cannot support the required portable handoff.
+
+A bounded QA utility such as `browser_export_report` may generate self-contained HTML from captured screenshots, but Browser V2 is not a general-purpose document generator.
+
+
 ## Risk metadata
 
 Audit tools individually.
