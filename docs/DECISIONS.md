@@ -9,6 +9,7 @@ Architecture decisions belong in docs/adr/.
 - ADR-003 — Expose an actionable bounded FIFO queue when capacity is full (replaces immediate structured error).
 - ADR-004 — Distinguish portable auth identities from profile-bound identities; use isolated task sessions with encrypted persistence and known-good generations.
 - ADR-005 — Decouple authorized client identity from shared persistent browser-slot identity; use visible installed Chrome, exclusive per-slot leases, and same-window human/AI interaction.
+- ADR-006 — Preserve implicit single-session binding, add optional non-secret `session_ref` for multi-session addressing, and use MCP-native screenshot artifact handoff rather than credential-like lease arguments or Windows-local paths.
 
 ## Decisions to record as implementation progresses
 
