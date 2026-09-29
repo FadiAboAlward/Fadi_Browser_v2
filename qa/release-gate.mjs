@@ -106,26 +106,29 @@ async function runFiveBrowserTest(clientId) {
     let slot0FilePath = null;
 
     await Promise.all(sessions.map(async (s) => {
+      console.log(`  [${s.id}] acquire...`);
       const acq = await s.client.callTool({ name: 'browser_acquire', arguments: { pool_id: 'default' } });
       if (acq.isError) throw new Error(`Session ${s.id} acquire: ${acq.content[0].text}`);
 
+      console.log(`  [${s.id}] navigate...`);
       const nav = await s.client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com' } });
       if (nav.isError) throw new Error(`Session ${s.id} navigate: ${nav.content[0].text}`);
 
+      console.log(`  [${s.id}] get_title...`);
       const t = await s.client.callTool({ name: 'browser_get_title', arguments: {} });
       if (!t.content[0].text.includes('Example Domain')) throw new Error(`Session ${s.id}: Title mismatch: ${t.content[0].text}`);
 
-      // BLOCKER 3: all 5 must be visible and interactive
+      console.log(`  [${s.id}] status...`);
       const st = await s.client.callTool({ name: 'browser_status', arguments: {} });
       if (st.isError) throw new Error(`Session ${s.id} status: ${st.content[0].text}`);
       const data = JSON.parse(st.content[0].text);
       assertInteractive(data, `slot-${s.id}`);
 
-      // restore_window must succeed for all 5
+      console.log(`  [${s.id}] restore_window...`);
       const rw = await s.client.callTool({ name: 'browser_restore_window', arguments: {} });
       if (rw.isError) throw new Error(`Session ${s.id} restore_window: ${rw.content[0].text}`);
 
-      // BLOCKER 4: screenshot must return valid inline image with correct magic bytes and non-zero dimensions
+      console.log(`  [${s.id}] screenshot...`);
       const shot = await s.client.callTool({ name: 'browser_screenshot', arguments: {} });
       const shotImg = shot.content?.find(c => c.type === 'image');
       const shotText = shot.content?.find(c => c.type === 'text');
@@ -133,7 +136,7 @@ async function runFiveBrowserTest(clientId) {
       const dims = validateImage(shotImg.data, shotImg.mimeType);
       console.log(`  slot-${s.id}: screenshot ${shotImg.mimeType} ${dims.width}x${dims.height} (${shotImg.data.length} base64 chars) ✓`);
 
-      // Build standalone HTML (always, for all 5 slots)
+      console.log(`  [${s.id}] html export...`);
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Browser V2 QA - ${clientId} slot-${s.id}</title></head><body><h2>${clientId} / slot-${s.id}</h2><img src="data:${shotImg.mimeType};base64,${shotImg.data}" style="max-width:100%"/></body></html>`;
       writeFileSync(`qa/screenshot-report-${clientId}-slot${s.id}.html`, html);
 
