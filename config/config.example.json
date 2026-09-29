@@ -6,7 +6,7 @@
   "maxConcurrentSessions": 5,
   "queueMaxDepth": 10,
   "queueWaitTimeoutMs": 30000,
-  "maxSessionsPerClient": 3,
+  "maxSessionsPerClient": 5,
   "leaseTtlMs": 300000,
   "recoveryWindowMs": 120000,
   "retentionDays": 30,
@@ -40,7 +40,12 @@
     "fadi-gpt": {
       "defaultAuthProfile": "fadi",
       "allowedAuthProfiles": [
-        "fadi"
+        "fadi",
+        "pool-profile-1",
+        "pool-profile-2",
+        "pool-profile-3",
+        "pool-profile-4",
+        "pool-profile-5"
       ],
       "allowedPools": [
         "default"
@@ -50,8 +55,17 @@
     "goilot-gpt": {
       "defaultAuthProfile": "goilot",
       "allowedAuthProfiles": [
-        "goilot"
-      ]
+        "goilot",
+        "pool-profile-1",
+        "pool-profile-2",
+        "pool-profile-3",
+        "pool-profile-4",
+        "pool-profile-5"
+      ],
+      "allowedPools": [
+        "default"
+      ],
+      "defaultPool": "default"
     },
     "goilot-claude": {
       "defaultAuthProfile": "goilot-claude",
@@ -65,7 +79,12 @@
         "public",
         "fadi",
         "goilot",
-        "goilot-claude"
+        "goilot-claude",
+        "pool-profile-1",
+        "pool-profile-2",
+        "pool-profile-3",
+        "pool-profile-4",
+        "pool-profile-5"
       ]
     }
   },

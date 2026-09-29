@@ -30,7 +30,7 @@ $env:FADI_BROWSER_V2_SOURCE_DIRTY = if ($sourceDirty) { 'true' } else { 'false' 
 
 $stdout = Join-Path $script:RuntimeRoot 'logs\broker.out.log'
 $stderr = Join-Path $script:RuntimeRoot 'logs\broker.err.log'
-$process = Start-Process -FilePath $node -ArgumentList @('src/server.mjs') -WorkingDirectory $sourceRoot -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+$process = Start-Process -FilePath $node -ArgumentList @('src/server.mjs') -WorkingDirectory $sourceRoot -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 
 $deadline = (Get-Date).AddSeconds(45)
 do {
@@ -39,4 +39,5 @@ do {
   $health = Test-V2Health
 } until ($health -or (Get-Date) -gt $deadline)
 if (-not $health) { throw 'V2 broker did not become healthy within 45 seconds.' }
-$health
+Write-Output "Broker is healthy. Waiting for process to exit to keep Scheduled Task alive..."
+$process.WaitForExit()

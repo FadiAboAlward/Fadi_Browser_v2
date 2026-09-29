@@ -124,18 +124,22 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
 
   // --- Phase 1 QA capabilities ---
 
-  register(server, 'browser_screenshot', 'Capture a screenshot of the current page in the owned session. Returns a local file path and screenshot_id usable with browser_read_screenshot.', z.object({
+  register(server, 'browser_screenshot', 'Capture a screenshot of the current page in the owned session. Returns the screenshot as inline base64 image content (for remote clients) plus a screenshot_id usable with browser_read_screenshot.', z.object({
     full_page: z.boolean().optional()
   }), async args => {
     const { clientId, leaseToken } = resolveIdentity(boundContext);
     const raw = await backend.screenshot({ clientId, leaseToken, fullPage: args.full_page });
     // Extract path from agent-browser output
     const filePath = raw?.output?.data?.path || raw?.output?.data?.file || raw?.path || raw?.file || null;
-    return {
-      ...raw,
-      screenshot_id: filePath,
-      screenshot_path: filePath
-    };
+    const textContent = { type: 'text', text: JSON.stringify({ ...raw, screenshot_id: filePath, screenshot_path: filePath }) };
+    if (filePath && existsSync(filePath)) {
+      const imageBuffer = readFileSync(filePath);
+      const base64 = imageBuffer.toString('base64');
+      const ext = path.extname(filePath).toLowerCase();
+      const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+      return { content: [{ type: 'image', data: base64, mimeType }, textContent] };
+    }
+    return { content: [textContent] };
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
   register(server, 'browser_read_screenshot', 'Retrieve a screenshot captured by browser_screenshot as MCP image content (base64 PNG) suitable for HTML reports and remote clients. Pass the screenshot_id returned by browser_screenshot.', z.object({

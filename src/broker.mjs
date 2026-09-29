@@ -357,7 +357,23 @@ export class LeaseBroker {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new BrokerError('POLICY', 'UNSUPPORTED_URL_SCHEME', 'Only HTTP and HTTPS navigation is allowed through the broker.');
     }
-    return this.#withLease(clientId, leaseToken, 'navigate', () => this.engine.navigate(this.#leaseByToken(leaseToken).sessionId, url), { url });
+    return this.#withLease(clientId, leaseToken, 'navigate', async (lease) => {
+      let lastError;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          return await this.engine.navigate(lease.sessionId, url);
+        } catch (err) {
+          lastError = err;
+          const msg = String(err.message || '');
+          if (attempt < 3 && (msg.includes('10060') || msg.includes('ECONNREFUSED') || msg.includes('TargetClosed') || msg.includes('socket hang up') || msg.includes('TIMEOUT'))) {
+            this.telemetry.event('navigation_retry', this.#eventContext(lease, { operation: 'navigate', attempt, error: msg, url }));
+            await new Promise(r => setTimeout(r, 2000 * attempt));
+            continue;
+          }
+          throw err;
+        }
+      }
+    }, { url });
   }
 
   async snapshot({ clientId, leaseToken, interactive = true, compact = false, depth }) {

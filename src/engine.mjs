@@ -349,6 +349,9 @@ async function ensureExternalChrome(config, profilePath) {
       `--remote-debugging-port=${config.cdpPort}`,
       '--remote-debugging-address=127.0.0.1',
       '--no-first-run',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       'about:blank'
     ], { detached: true, stdio: 'ignore', windowsHide: false });
     child.once('error', reject);
