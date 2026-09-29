@@ -315,3 +315,19 @@ Any of these blocks production readiness:
 - V1 regression;
 - unrecoverable profile corruption;
 - unreliable lease ownership.
+
+
+## Progress reporting
+
+Human-facing Browser V2 status updates must include an approximate overall completion percentage.
+
+The percentage is a planning estimate, not a test result. It should be based on completed release gates and remaining blockers, not simply on elapsed time.
+
+Each meaningful status update should state:
+
+- approximate overall completion percentage;
+- current phase;
+- what remains before the next release gate;
+- any blocker that materially changes the estimate.
+
+Use a range when uncertainty is high. A failed regression or a newly discovered blocker may lower the estimate. Do not report 100% until the required local Release Gate and independent Fadi/Alex remote acceptance have passed and the agreed cleanup phase is complete.
