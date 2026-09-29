@@ -60,3 +60,5 @@ client-mappings.*
 Thumbs.db
 .vscode/
 .idea/
+
+qa/screenshot-report-*.html
