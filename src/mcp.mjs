@@ -53,8 +53,11 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     return { ...publicResult, recovery_credential: recoveryCredential };
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false });
 
-  register(server, 'browser_status', 'Return broker health or the session bound to this MCP task.', z.object({ session_ref: z.string().optional() }), args => {
-    return backend.status({ clientId: boundContext.clientId, leaseToken: boundContext.leaseToken });
+  register(server, 'browser_status', 'Return global pool health or status of a specific session.', z.object({ session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional() }), args => {
+    if (args.session_ref) {
+      return backend.status(resolveIdentity(boundContext, args));
+    }
+    return backend.status({ clientId: boundContext.clientId });
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
   register(server, 'browser_recover', 'Recover a restart-preserved lease only with its original credential.', z.object({
@@ -73,7 +76,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     return result;
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
-  register(server, 'browser_release', 'Release the session bound to this MCP task.', z.object({ session_ref: z.string().optional() }), async args => {
+  register(server, 'browser_release', 'Release a locally owned Browser V2 session. This only frees local browser capacity and does not delete external data or perform an external side effect.', z.object({ session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional() }), async args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     const result = await backend.release({ clientId, leaseToken, sessionRef });
     if (boundContext.leaseToken === leaseToken) {
@@ -84,7 +87,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
   register(server, 'browser_navigate', 'Navigate the bound session to an HTTP(S) URL.', z.object({ url: z.url() ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.navigate({ clientId, leaseToken, sessionRef, url: args.url });
@@ -95,18 +98,18 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     compact: z.boolean().optional(),
     depth: z.number().int().min(1).max(20).optional()
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.snapshot({ clientId, leaseToken, sessionRef, interactive: args.interactive, compact: args.compact, depth: args.depth });
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
-  register(server, 'browser_get_url', 'Return the current URL for the owned session.', z.object({ session_ref: z.string().optional() }), args => {
+  register(server, 'browser_get_url', 'Return the current URL for the owned session.', z.object({ session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional() }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.getUrl({ clientId, leaseToken, sessionRef });
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
 
-  register(server, 'browser_get_title', 'Return the current title for the owned session.', z.object({ session_ref: z.string().optional() }), args => {
+  register(server, 'browser_get_title', 'Return the current title for the owned session.', z.object({ session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional() }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.getTitle({ clientId, leaseToken, sessionRef });
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
@@ -114,7 +117,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   register(server, 'browser_evaluate', 'Evaluate JavaScript in the owned session. Scripts are never written to telemetry.', z.object({
     script: z.string().max(50000)
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.evaluate({ clientId, leaseToken, sessionRef, script: args.script });
@@ -124,13 +127,13 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     command: z.enum(['click', 'fill', 'type', 'press', 'wait', 'tab', 'back', 'forward', 'reload', 'hover', 'focus', 'check', 'uncheck', 'select', 'scroll', 'scrollintoview']),
     args: z.array(z.string().max(10000)).max(20).optional()
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.command({ clientId, leaseToken, sessionRef, command: args.command, args: args.args || [] });
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true });
 
-  register(server, 'browser_restore_window', 'Restore and foreground the same interactive browser window without launching another browser.', z.object({ session_ref: z.string().optional() }), args => {
+  register(server, 'browser_restore_window', 'Restore and foreground the same interactive browser window without launching another browser.', z.object({ session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional() }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.restoreWindow({ clientId, leaseToken, sessionRef });
   }, { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
@@ -139,7 +142,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
 
   register(server, 'browser_screenshot', 'Capture a screenshot of the current page in the owned session. Returns the screenshot as inline base64 image content (for remote clients) plus normalized metadata.', z.object({
     full_page: z.boolean().optional(),
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), async args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     const raw = await backend.screenshot({ clientId, leaseToken, sessionRef, fullPage: args.full_page });
@@ -205,7 +208,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
 
   register(server, 'browser_screenshot_get', 'Retrieve a previously captured screenshot by ID. Returns the exact same image content and metadata without interacting with the browser.', z.object({
     screenshot_id: z.string().min(1),
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), async args => {
     // Identity verification is optional here if the image is in the QA dir, but we can do it if session_ref is provided.
     if (args.session_ref || boundContext.clientId) {
@@ -277,13 +280,13 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     
     return {
       content: [{ type: 'resource', resource: { uri: `report://${path.basename(reportPath)}`, mimeType: 'text/html', blob: Buffer.from(html).toString('base64') } }],
-      structuredContent: { ok: true, report_path: reportPath }
+      structuredContent: { ok: true, report_uri: `report://${path.basename(reportPath)}`, mime_type: 'text/html', byte_size: Buffer.from(html).length, embedded: true, local_path: reportPath }
     };
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false });
 
   register(server, 'browser_read_screenshot', 'Legacy alias for browser_screenshot_get', z.object({
     screenshot_id: z.string().min(1),
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), async args => {
     // We will just try to read from the old temporary folder or the new stable folder
     const fallbackPath = path.isAbsolute(args.screenshot_id) ? args.screenshot_id : path.join(process.env.LOCALAPPDATA || '', 'FadiBrowserV2', 'qa', 'screenshots', `${args.screenshot_id}.png`);
@@ -303,7 +306,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   register(server, 'browser_console_messages', 'Return console messages captured during the owned session.', z.object({
     clear: z.boolean().optional()
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.consoleMessages({ clientId, leaseToken, sessionRef, clear: args.clear });
@@ -312,7 +315,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   register(server, 'browser_page_errors', 'Return JavaScript and page errors captured during the owned session.', z.object({
     clear: z.boolean().optional()
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.pageErrors({ clientId, leaseToken, sessionRef, clear: args.clear });
@@ -324,7 +327,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     method: z.string().max(10).optional(),
     status: z.string().max(20).optional()
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.networkRequests({ clientId, leaseToken, sessionRef, filter: args.filter, type: args.type, method: args.method, status: args.status });
@@ -333,7 +336,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   register(server, 'browser_network_request_details', 'Return full details of a specific network request by ID. Sensitive headers and credentials are redacted.', z.object({
     request_id: z.string().min(1)
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.networkRequestDetail({ clientId, leaseToken, sessionRef, requestId: args.request_id });
@@ -348,7 +351,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     selector: z.string().max(1000).optional(),
     timeout_ms: z.number().int().min(100).max(120000).optional()
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.waitForCondition({
@@ -363,7 +366,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
     width: z.number().int().min(1).max(7680),
     height: z.number().int().min(1).max(4320)
   ,
-    session_ref: z.string().optional()
+    session_ref: z.string().describe('Non-secret opaque local browser session reference returned by browser_acquire. Used only to route an operation to a browser session already owned by the same caller. It is not an authentication token or credential.').optional()
   }), args => {
     const { clientId, leaseToken, sessionRef } = resolveIdentity(boundContext, args);
     return backend.resize({ clientId, leaseToken, sessionRef, width: args.width, height: args.height });
