@@ -111,6 +111,7 @@ async function runFiveBrowserTest(clientId) {
       console.log(`  [${s.id}] acquire...`);
       const acq = await s.client.callTool({ name: 'browser_acquire', arguments: { pool_id: 'default' } });
       if (acq.isError) throw new Error(`Session ${s.id} acquire: ${acq.content[0].text}`);
+      s.sessionRef = JSON.parse(acq.content[0].text).session_ref;
       if (i < sessions.length - 1) {
         console.log(`  Waiting 12s before next acquire...`);
         await new Promise(r => setTimeout(r, 12000));
