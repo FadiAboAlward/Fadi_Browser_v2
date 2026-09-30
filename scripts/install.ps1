@@ -43,7 +43,9 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 $task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal
 $task.Settings.Hidden = $true
-Register-ScheduledTask -TaskName $taskName -InputObject $task -Description 'Starts Fadi Browser V2 independently from Fadi Playwright V1.' -Force | Out-Null
+Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
+
+& (Join-Path $PSScriptRoot 'tunnels\install-tunnels.ps1')
 
 & (Join-Path $PSScriptRoot 'inventory-v1.ps1') | Out-Null
 
