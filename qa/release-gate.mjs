@@ -76,7 +76,7 @@ async function runCoreTools() {
     await client.callTool({ name: 'browser_resize', arguments: { width: 800, height: 600 } });
 
     // BLOCKER 3: visibility assertion is now enforced
-    const st = await client.callTool({ name: 'browser_status', arguments: {} });
+    const st = await client.callTool({ name: 'browser_status', arguments: { session_ref: acq.structuredContent ? acq.structuredContent.session_ref : undefined } });
     if (st.isError) throw new Error(st.content[0].text);
     const data = JSON.parse(st.content[0].text);
     assertInteractive(data, 'core-tools');
