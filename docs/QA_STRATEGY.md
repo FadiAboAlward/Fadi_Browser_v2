@@ -149,3 +149,15 @@ Any of these blocks production readiness:
 - V1 regression;
 - unrecoverable profile corruption;
 - unreliable lease ownership.
+
+
+## Latest remote acceptance findings — 2026-09-30
+
+Real Alex/Goilot acceptance after tool refresh found these release blockers:
+
+- explicit `browser_release(session_ref=...)` can be blocked by the OpenAI safety layer before reaching the MCP tool, even though implicit `browser_release({})` works;
+- `browser_status` after acquire currently resolves to the bound session instead of always exposing the agreed rich five-slot pool view;
+- `browser_export_report` is recognized by ChatGPT as returning a materializable file attachment, but the response contract should be verified so the portable resource is explicit and not represented only by a Windows `report_path`;
+- remote acceptance must distinguish host/platform safety blocking from broker/backend failure.
+
+Do not mark Browser V2 complete until these remote acceptance cases are resolved or the accepted interface is updated to remove unsupported explicit actions.
