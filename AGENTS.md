@@ -29,6 +29,7 @@ It exists because fixed persistent browsers do not scale cleanly to several conc
 17. **Client identity and browser-slot identity are separate. Do not permanently bind a shared-pool client to one physical slot.**
 18. **`concurrency_limit` is not proof that the same number of persistent slots exists; inspect the actual pool.**
 19. **For the production shared pool, preserve visible, interactive installed Chrome and per-slot persistent state. Human intervention happens in the same browser; do not add takeover/pause machinery unless a demonstrated problem requires it.**
+20. **Follow the credit-efficient layered QA model in `docs/QA_STRATEGY.md`: focused Tier A checks while iterating, the full Tier B Release Gate at stability boundaries, then independent Fadi and Alex/Goilot Tier C acceptance. A feature-specific PASS is never an overall release PASS.**
 
 ## V1 lessons are design inputs
 
@@ -138,9 +139,10 @@ The goal is accurate metadata, not weaker safeguards.
 4. Read docs/IMPLEMENTATION_PLAYBOOK.md.
 5. Read docs/V1_LESSONS_APPLIED.md.
 6. Read relevant ADRs.
-7. Run status and doctor if runtime access exists.
-8. Review sanitized diagnostics and metrics before guessing at a problem.
-9. Create a branch for non-trivial changes.
+7. Read docs/QA_STRATEGY.md and identify which QA tier the change requires.
+8. Run status and doctor if runtime access exists.
+9. Review sanitized diagnostics and metrics before guessing at a problem.
+10. Create a branch for non-trivial changes.
 
 ## When fixing a bug
 
@@ -190,6 +192,7 @@ Do not rely on conversation memory. A future agent should be able to understand 
 
 ## Definition of done for substantial changes
 
+- the required QA tier in `docs/QA_STRATEGY.md` passes;
 - tests pass;
 - concurrency regression passes;
 - fresh-chat and transport-reconnect ownership tests pass;
