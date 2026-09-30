@@ -185,7 +185,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
         byte_size: imageBuffer.length,
         sha256,
         local_path: stablePath,
-        artifact_reference: `file:///${stablePath.replace(/\\/g, '/')}`
+          artifact_reference: `screenshot://${screenshotId}`
       };
     }
     
@@ -238,7 +238,7 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
       byte_size: imageBuffer.length,
       sha256,
       local_path: stablePath,
-      artifact_reference: `file:///${stablePath.replace(/\\/g, '/')}`
+        artifact_reference: `screenshot://${args.screenshot_id}`
     };
 
     const structuredResult = { ok: true, screenshot: screenshotMeta };
@@ -251,6 +251,36 @@ export function createBrokerMcpServer(backend, version = '0.1.0', preboundClient
   }, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
   
   // Legacy alias for backward compatibility
+  
+  register(server, 'browser_export_report', 'Export a QA HTML report with embedded screenshots.', z.object({
+    screenshot_id: z.array(z.string()),
+    format: z.literal('html'),
+    embed_images: z.literal(true)
+  }), async args => {
+    let html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>QA Report</title></head><body><h1>QA Report</h1>';
+    const normalizedQaDir = path.join(process.env.LOCALAPPDATA || '', 'FadiBrowserV2', 'qa', 'screenshots');
+    
+    for (const id of args.screenshot_id) {
+      const stablePath = path.join(normalizedQaDir, `${id}.png`);
+      if (fs.existsSync(stablePath)) {
+        const imageBuffer = fs.readFileSync(stablePath);
+        const base64 = imageBuffer.toString('base64');
+        html += `<h2>Screenshot: ${id}</h2><img src="data:image/png;base64,${base64}" style="max-width: 100%; border: 1px solid #ccc;" /><br/>`;
+      } else {
+        html += `<h2>Screenshot: ${id} (NOT FOUND)</h2><br/>`;
+      }
+    }
+    html += '</body></html>';
+    
+    const reportPath = path.join(normalizedQaDir, `report_${Date.now()}.html`);
+    fs.writeFileSync(reportPath, html);
+    
+    return {
+      content: [{ type: 'resource', resource: { uri: `report://${path.basename(reportPath)}`, mimeType: 'text/html', blob: Buffer.from(html).toString('base64') } }],
+      structuredContent: { ok: true, report_path: reportPath }
+    };
+  }, { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false });
+
   register(server, 'browser_read_screenshot', 'Legacy alias for browser_screenshot_get', z.object({
     screenshot_id: z.string().min(1),
     session_ref: z.string().optional()

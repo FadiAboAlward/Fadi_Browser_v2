@@ -235,10 +235,9 @@ export class LeaseBroker {
     }
   }
 
-  status({ clientId, leaseToken } = {}) {
-    if (leaseToken) {
-      const lease = this.#leaseByToken(leaseToken);
-      if (clientId && lease.clientId !== clientId) this.#ownershipViolation(lease, clientId);
+  status({ clientId, leaseToken, sessionRef } = {}) {
+    if (sessionRef || leaseToken) {
+      const lease = this.#resolveLease(clientId, leaseToken, sessionRef);
       return this.#publicLease(lease);
     }
     const authProfiles = Object.fromEntries(Object.entries(this.config.authProfiles).map(([id, profile]) => [id, {
@@ -258,9 +257,12 @@ export class LeaseBroker {
               state: 'BUSY',
               session_ref: activeLease.leaseId,
               owner_client_id: activeLease.clientId,
+              auth_profile_id: activeLease.authProfileId,
               process_id: activeLease.browserDiagnostics?.process_id || null,
               visible: activeLease.browserDiagnostics?.visible !== undefined ? activeLease.browserDiagnostics?.visible : false,
-              window_state: activeLease.browserDiagnostics?.window_state || 'unknown'
+              window_state: activeLease.browserDiagnostics?.window_state || 'unknown',
+            safe_window_id: activeLease.browserDiagnostics?.safe_window_id || null,
+            created_at: activeLease.createdAt
             };
           }
           return { browser_slot_id: slot.id, state: 'FREE' };
@@ -296,8 +298,7 @@ export class LeaseBroker {
   }
 
   async recover({ clientId, leaseToken, sessionRef }) {
-    const lease = this.#leaseByToken(leaseToken);
-    if (lease.clientId !== clientId) this.#ownershipViolation(lease, clientId);
+    const lease = this.#resolveLease(clientId, leaseToken, sessionRef);
     if (lease.status !== 'RECOVERABLE') {
       throw new BrokerError('LEASE', 'NOT_RECOVERABLE', 'This lease is not in a recoverable state.', { status: lease.status }, 409);
     }
@@ -330,9 +331,8 @@ export class LeaseBroker {
     return this.#publicLease(lease);
   }
 
-  async release({ clientId, leaseToken, reason = 'explicit' }) {
-    const lease = this.#leaseByToken(leaseToken);
-    if (lease.clientId !== clientId) this.#ownershipViolation(lease, clientId);
+  async release({ clientId, leaseToken, sessionRef, reason = 'explicit' }) {
+    const lease = this.#resolveLease(clientId, leaseToken, sessionRef);
     return this.#closeLease(lease, reason);
   }
 
