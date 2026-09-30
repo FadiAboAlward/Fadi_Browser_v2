@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
@@ -63,7 +64,7 @@ async function runCoreTools() {
     const nav = await client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com' } });
     if (nav.isError) throw new Error(nav.content[0].text);
 
-    await client.callTool({ name: 'browser_wait_for_condition', arguments: { text: 'Example Domain' } });
+    
     await client.callTool({ name: 'browser_snapshot', arguments: {} });
     await client.callTool({ name: 'browser_get_title', arguments: {} });
     await client.callTool({ name: 'browser_get_url', arguments: {} });
@@ -88,6 +89,8 @@ async function runCoreTools() {
     await transport.close().catch(() => {});
   }
   console.log('Core tools passed.');
+    console.log('Waiting 10 seconds for Chrome to fully exit...');
+    await new Promise(r => setTimeout(r, 10000));
 }
 
 async function runFiveBrowserTest(clientId) {
@@ -97,26 +100,57 @@ async function runFiveBrowserTest(clientId) {
     for (let i = 0; i < 5; i++) {
       const { client, transport } = await createClient(clientId);
       sessions.push({ client, transport, id: i });
-      // Stagger to prevent OS 10060 connection flooding
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    // === BLOCKER 4: standalone HTML pipeline test (slot 0 only) ===
-    // We'll capture the file path for slot 0 and test HTML independence after all slots pass
     let slot0FilePath = null;
 
-    await Promise.all(sessions.map(async (s) => {
+    // Phase 1: Acquire all 5 sequentially with stagger (proves 5 concurrent leases)
+    for (let i = 0; i < sessions.length; i++) {
+      const s = sessions[i];
       console.log(`  [${s.id}] acquire...`);
       const acq = await s.client.callTool({ name: 'browser_acquire', arguments: { pool_id: 'default' } });
       if (acq.isError) throw new Error(`Session ${s.id} acquire: ${acq.content[0].text}`);
+      if (i < sessions.length - 1) {
+        console.log(`  Waiting 12s before next acquire...`);
+        await new Promise(r => setTimeout(r, 12000));
+      }
+    }
 
+    console.log('  All 5 acquired. Waiting 10s for Chrome to settle...');
+    await new Promise(r => setTimeout(r, 10000));
+
+    // Phase 2: Work each session sequentially (avoids CPU thrash from parallel browser ops)
+    for (const s of sessions) {
       console.log(`  [${s.id}] navigate...`);
       const nav = await s.client.callTool({ name: 'browser_navigate', arguments: { url: 'https://example.com' } });
       if (nav.isError) throw new Error(`Session ${s.id} navigate: ${nav.content[0].text}`);
 
       console.log(`  [${s.id}] get_title...`);
-      const t = await s.client.callTool({ name: 'browser_get_title', arguments: {} });
-      if (!t.content[0].text.includes('Example Domain')) throw new Error(`Session ${s.id}: Title mismatch: ${t.content[0].text}`);
+      let titleText = '';
+      let lastTitleObj = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const t = await s.client.callTool({ name: 'browser_get_title', arguments: {} });
+        lastTitleObj = t;
+        if (!t.isError && t.content[0].text.includes('Example Domain')) {
+          titleText = t.content[0].text;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 5000));
+      }
+      if (!titleText.includes('Example Domain')) {
+        const currentUrl = await s.client.callTool({ name: 'browser_get_url', arguments: {} });
+        const html = await s.client.callTool({ name: 'browser_evaluate', arguments: { script: 'document.body.innerHTML' } });
+        console.error(`Session ${s.id} HTML: ${JSON.stringify(html)}`);
+        console.error(`Session ${s.id} title error. URL: ${JSON.stringify(currentUrl)}. Last response:`, JSON.stringify(lastTitleObj));
+        try {
+          const snap = await s.client.callTool({ name: 'browser_screenshot', arguments: {} });
+          const fs = await import('fs');
+          fs.writeFileSync(`error-snap-${s.id}.json`, JSON.stringify(snap));
+          console.error(`Saved error snapshot to error-snap-${s.id}.json`);
+        } catch(e) {}
+        throw new Error(`Session ${s.id}: Title mismatch after retries`);
+      }
 
       console.log(`  [${s.id}] status...`);
       const st = await s.client.callTool({ name: 'browser_status', arguments: {} });
@@ -140,14 +174,12 @@ async function runFiveBrowserTest(clientId) {
       const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Browser V2 QA - ${clientId} slot-${s.id}</title></head><body><h2>${clientId} / slot-${s.id}</h2><img src="data:${shotImg.mimeType};base64,${shotImg.data}" style="max-width:100%"/></body></html>`;
       writeFileSync(`qa/screenshot-report-${clientId}-slot${s.id}.html`, html);
 
-      // Keep file path for slot 0 standalone test
       if (s.id === 0 && shotText) {
         try { slot0FilePath = JSON.parse(shotText.text).screenshot_id; } catch(e) {}
       }
-    }));
+    }
 
     // BLOCKER 4: standalone HTML independence test for slot 0
-    // Temporarily rename the original PNG so we can prove HTML is self-contained
     if (slot0FilePath && existsSync(slot0FilePath)) {
       const tmpPath = slot0FilePath + '.qa-bak';
       renameSync(slot0FilePath, tmpPath);

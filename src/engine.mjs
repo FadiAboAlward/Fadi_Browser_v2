@@ -105,7 +105,7 @@ export class AgentBrowserEngine {
   }
 
   async getTitle(sessionId) {
-    return this.run(sessionId, ['get', 'title']);
+    return this.evaluate(sessionId, 'document.title').then(res => res && res.output && res.output.data && typeof res.output.data.result === 'string' ? res.output.data.result : '');
   }
 
   async wait(sessionId, milliseconds) {

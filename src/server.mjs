@@ -107,24 +107,24 @@ const httpServer = createServer(async (req, res) => {
 async function routeApi(route, body) {
   switch (route) {
     case '/v1/acquire': return broker.acquire({ clientId: body.client_id, authProfileId: body.auth_profile_id, poolId: body.pool_id, taskLabel: body.task_label, waitTimeoutMs: body.wait_timeout_ms });
-    case '/v1/status': return broker.status({ clientId: body.client_id, leaseToken: body.lease_token });
-    case '/v1/recover': return broker.recover({ clientId: body.client_id, leaseToken: body.lease_token });
-    case '/v1/release': return broker.release({ clientId: body.client_id, leaseToken: body.lease_token });
+    case '/v1/status': return broker.status({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref });
+    case '/v1/recover': return broker.recover({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref });
+    case '/v1/release': return broker.release({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref });
     case '/v1/queue/cancel': return broker.cancelQueue({ clientId: body.client_id, queueId: body.queue_id });
-    case '/v1/navigate': return broker.navigate({ clientId: body.client_id, leaseToken: body.lease_token, url: body.url });
-    case '/v1/snapshot': return broker.snapshot({ clientId: body.client_id, leaseToken: body.lease_token, interactive: body.interactive, compact: body.compact, depth: body.depth });
-    case '/v1/get-url': return broker.getUrl({ clientId: body.client_id, leaseToken: body.lease_token });
-    case '/v1/get-title': return broker.getTitle({ clientId: body.client_id, leaseToken: body.lease_token });
-    case '/v1/evaluate': return broker.evaluate({ clientId: body.client_id, leaseToken: body.lease_token, script: body.script });
-    case '/v1/command': return broker.command({ clientId: body.client_id, leaseToken: body.lease_token, command: body.command, args: body.args || [] });
-    case '/v1/restore-window': return broker.restoreWindow({ clientId: body.client_id, leaseToken: body.lease_token });
-    case '/v1/screenshot': return broker.screenshot({ clientId: body.client_id, leaseToken: body.lease_token, fullPage: body.full_page });
-    case '/v1/console-messages': return broker.consoleMessages({ clientId: body.client_id, leaseToken: body.lease_token, clear: body.clear });
-    case '/v1/page-errors': return broker.pageErrors({ clientId: body.client_id, leaseToken: body.lease_token, clear: body.clear });
-    case '/v1/network-requests': return broker.networkRequests({ clientId: body.client_id, leaseToken: body.lease_token, filter: body.filter, type: body.type, method: body.method, status: body.status });
-    case '/v1/network-request-details': return broker.networkRequestDetail({ clientId: body.client_id, leaseToken: body.lease_token, requestId: body.request_id });
-    case '/v1/wait-for-condition': return broker.waitForCondition({ clientId: body.client_id, leaseToken: body.lease_token, text: body.text, textGone: body.text_gone, url: body.url, loadState: body.load_state, fn: body.fn, selector: body.selector, timeoutMs: body.timeout_ms });
-    case '/v1/resize': return broker.resize({ clientId: body.client_id, leaseToken: body.lease_token, width: body.width, height: body.height });
+    case '/v1/navigate': return broker.navigate({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, url: body.url });
+    case '/v1/snapshot': return broker.snapshot({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, interactive: body.interactive, compact: body.compact, depth: body.depth });
+    case '/v1/get-url': return broker.getUrl({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref });
+    case '/v1/get-title': return broker.getTitle({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref });
+    case '/v1/evaluate': return broker.evaluate({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, script: body.script });
+    case '/v1/command': return broker.command({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, command: body.command, args: body.args || [] });
+    case '/v1/restore-window': return broker.restoreWindow({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref });
+    case '/v1/screenshot': return broker.screenshot({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, fullPage: body.full_page });
+    case '/v1/console-messages': return broker.consoleMessages({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, clear: body.clear });
+    case '/v1/page-errors': return broker.pageErrors({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, clear: body.clear });
+    case '/v1/network-requests': return broker.networkRequests({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, filter: body.filter, type: body.type, method: body.method, status: body.status });
+    case '/v1/network-request-details': return broker.networkRequestDetail({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, requestId: body.request_id });
+    case '/v1/wait-for-condition': return broker.waitForCondition({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, text: body.text, textGone: body.text_gone, url: body.url, loadState: body.load_state, fn: body.fn, selector: body.selector, timeoutMs: body.timeout_ms });
+    case '/v1/resize': return broker.resize({ clientId: body.client_id, leaseToken: body.lease_token, sessionRef: body.session_ref, width: body.width, height: body.height });
     case '/v1/admin/reap': await broker.reapStale(); return broker.status();
     case '/v1/admin/shutdown': {
       if (shuttingDown) return { status: 'SHUTTING_DOWN' };

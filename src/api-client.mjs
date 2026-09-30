@@ -48,6 +48,7 @@ function mapInput(input) {
   const pairs = [
     ['clientId', 'client_id'],
     ['leaseToken', 'lease_token'],
+    ['sessionRef', 'session_ref'],
     ['authProfileId', 'auth_profile_id'],
     ['poolId', 'pool_id'],
     ['taskLabel', 'task_label'],

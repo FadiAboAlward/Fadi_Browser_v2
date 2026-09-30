@@ -80,9 +80,10 @@ export class LeaseBroker {
         throw new BrokerError('BROKER', 'QUEUE_PROMOTION_RACE', 'A queued request could not claim its reserved capacity.', undefined, 503);
       }
       // Only queue when caller explicitly opts in with waitTimeoutMs > 0
-      if (waitTimeoutMs > 0) {
+      const effectiveTimeout = waitTimeoutMs !== undefined ? waitTimeoutMs : (this.config.queueWaitTimeoutMs || 30000);
+      if (effectiveTimeout > 0) {
         try {
-          const queued = this.queue.enqueue({ clientId, authProfileId: selected.pooled ? null : resolvedProfile, poolId: selected.pooled ? selected.poolId : null, taskLabel, waitTimeoutMs, signal });
+          const queued = this.queue.enqueue({ clientId, authProfileId: selected.pooled ? null : resolvedProfile, poolId: selected.pooled ? selected.poolId : null, taskLabel, waitTimeoutMs: effectiveTimeout, signal });
           return await queued.promise;
         } catch (error) {
           this.telemetry.event('tool_failed', {
@@ -199,6 +200,7 @@ export class LeaseBroker {
         lease_id: lease.leaseId,
         lease_token: leaseToken,
         session_id: lease.sessionId,
+      session_ref: lease.leaseId,
         client_id: lease.clientId,
         auth_profile_id: lease.authProfileId,
         pool_id: lease.poolId,
@@ -248,8 +250,22 @@ export class LeaseBroker {
       active_sessions: [...this.leases.values()].filter(lease => lease.authProfileId === id && CAPACITY_STATUSES.has(lease.status)).length
     }]));
     const browserPools = Object.fromEntries(Object.entries(this.config.browserPools || {}).map(([id, pool]) => [id, {
-      slots: pool.slots.map(slot => ({ browser_slot_id: slot.id, state: this.#isProfileBusy(slot.authProfileId) ? 'BUSY' : 'FREE' }))
-    }]));
+        slots: pool.slots.map(slot => {
+          const activeLease = [...this.leases.values()].find(l => l.browserSlotId === slot.id && ['ACTIVE', 'ALLOCATING'].includes(l.status));
+          if (activeLease) {
+            return {
+              browser_slot_id: slot.id,
+              state: 'BUSY',
+              session_ref: activeLease.leaseId,
+              owner_client_id: activeLease.clientId,
+              process_id: activeLease.browserDiagnostics?.process_id || null,
+              visible: activeLease.browserDiagnostics?.visible !== undefined ? activeLease.browserDiagnostics?.visible : false,
+              window_state: activeLease.browserDiagnostics?.window_state || 'unknown'
+            };
+          }
+          return { browser_slot_id: slot.id, state: 'FREE' };
+        })
+      }]));
     return {
       broker: 'HEALTHY',
       mcp: 'HEALTHY',
@@ -279,7 +295,7 @@ export class LeaseBroker {
     return { acquisition_state: 'CANCELLED', queue_id: queueId };
   }
 
-  async recover({ clientId, leaseToken }) {
+  async recover({ clientId, leaseToken, sessionRef }) {
     const lease = this.#leaseByToken(leaseToken);
     if (lease.clientId !== clientId) this.#ownershipViolation(lease, clientId);
     if (lease.status !== 'RECOVERABLE') {
@@ -351,13 +367,13 @@ export class LeaseBroker {
     return this.#publicLease(lease);
   }
 
-  async navigate({ clientId, leaseToken, url }) {
+  async navigate({ clientId, leaseToken, sessionRef, url }) {
     let parsed;
     try { parsed = new URL(url); } catch { throw new BrokerError('POLICY', 'INVALID_URL', 'Navigation URL is invalid.'); }
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new BrokerError('POLICY', 'UNSUPPORTED_URL_SCHEME', 'Only HTTP and HTTPS navigation is allowed through the broker.');
     }
-    return this.#withLease(clientId, leaseToken, 'navigate', async (lease) => {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'navigate', async (lease) => {
       let lastError;
       for (let attempt = 1; attempt <= 3; attempt += 1) {
         try {
@@ -376,34 +392,34 @@ export class LeaseBroker {
     }, { url });
   }
 
-  async snapshot({ clientId, leaseToken, interactive = true, compact = false, depth }) {
-    return this.#withLease(clientId, leaseToken, 'snapshot', lease => this.engine.snapshot(lease.sessionId, { interactive, compact, depth }));
+  async snapshot({ clientId, leaseToken, sessionRef, interactive = true, compact = false, depth }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'snapshot', lease => this.engine.snapshot(lease.sessionId, { interactive, compact, depth }));
   }
 
-  async getUrl({ clientId, leaseToken }) {
-    return this.#withLease(clientId, leaseToken, 'get_url', lease => this.engine.getUrl(lease.sessionId));
+  async getUrl({ clientId, leaseToken, sessionRef }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'get_url', lease => this.engine.getUrl(lease.sessionId));
   }
 
-  async getTitle({ clientId, leaseToken }) {
-    return this.#withLease(clientId, leaseToken, 'get_title', lease => this.engine.getTitle(lease.sessionId));
+  async getTitle({ clientId, leaseToken, sessionRef }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'get_title', lease => this.engine.getTitle(lease.sessionId));
   }
 
-  async evaluate({ clientId, leaseToken, script }) {
+  async evaluate({ clientId, leaseToken, sessionRef, script }) {
     if (typeof script !== 'string' || script.length > 50000) throw new BrokerError('POLICY', 'INVALID_SCRIPT', 'Evaluate script must be a string up to 50,000 characters.');
-    return this.#withLease(clientId, leaseToken, 'evaluate', lease => this.engine.evaluate(lease.sessionId, script));
+    return this.#withLease(clientId, leaseToken, sessionRef, 'evaluate', lease => this.engine.evaluate(lease.sessionId, script));
   }
 
-  async command({ clientId, leaseToken, command, args = [] }) {
+  async command({ clientId, leaseToken, sessionRef, command, args = [] }) {
     const allowed = new Set(['click', 'fill', 'type', 'press', 'wait', 'tab', 'back', 'forward', 'reload', 'hover', 'focus', 'check', 'uncheck', 'select', 'scroll', 'scrollintoview']);
     if (!allowed.has(command)) throw new BrokerError('POLICY', 'COMMAND_NOT_ALLOWED', 'This command is not exposed by the lease broker.', { command }, 403);
     if (!Array.isArray(args) || args.length > 20 || args.some(item => typeof item !== 'string' || item.length > 10000)) {
       throw new BrokerError('POLICY', 'INVALID_COMMAND_ARGUMENTS', 'Command arguments are invalid.');
     }
-    return this.#withLease(clientId, leaseToken, command, lease => this.engine.run(lease.sessionId, [command, ...args]));
+    return this.#withLease(clientId, leaseToken, sessionRef, command, lease => this.engine.run(lease.sessionId, [command, ...args]));
   }
 
-  async restoreWindow({ clientId, leaseToken }) {
-    return this.#withLease(clientId, leaseToken, 'restore_window', async lease => {
+  async restoreWindow({ clientId, leaseToken, sessionRef }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'restore_window', async lease => {
       const diagnostics = await this.engine.restoreWindow(lease.sessionId);
       lease.browserDiagnostics = diagnostics;
       this.telemetry.event('window_restored', this.#eventContext(lease, {
@@ -417,44 +433,44 @@ export class LeaseBroker {
     });
   }
 
-async screenshot({ clientId, leaseToken, fullPage = false }) {
-    return this.#withLease(clientId, leaseToken, 'screenshot', lease => this.engine.screenshot(lease.sessionId, { fullPage }));
+async screenshot({ clientId, leaseToken, sessionRef, fullPage = false }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'screenshot', lease => this.engine.screenshot(lease.sessionId, { fullPage }));
   }
 
-  async consoleMessages({ clientId, leaseToken, clear = false }) {
-    return this.#withLease(clientId, leaseToken, 'console_messages', lease => this.engine.consoleMessages(lease.sessionId, { clear }));
+  async consoleMessages({ clientId, leaseToken, sessionRef, clear = false }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'console_messages', lease => this.engine.consoleMessages(lease.sessionId, { clear }));
   }
 
-  async pageErrors({ clientId, leaseToken, clear = false }) {
-    return this.#withLease(clientId, leaseToken, 'page_errors', lease => this.engine.pageErrors(lease.sessionId, { clear }));
+  async pageErrors({ clientId, leaseToken, sessionRef, clear = false }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'page_errors', lease => this.engine.pageErrors(lease.sessionId, { clear }));
   }
 
-  async networkRequests({ clientId, leaseToken, filter, type, method, status }) {
-    return this.#withLease(clientId, leaseToken, 'network_requests', async lease => {
+  async networkRequests({ clientId, leaseToken, sessionRef, filter, type, method, status }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'network_requests', async lease => {
       const result = await this.engine.networkRequests(lease.sessionId, { filter, type, method, status });
       return redactNetworkResult(result);
     });
   }
 
-  async networkRequestDetail({ clientId, leaseToken, requestId }) {
+  async networkRequestDetail({ clientId, leaseToken, sessionRef, requestId }) {
     if (requestId === undefined || requestId === null || requestId === '') {
       throw new BrokerError('POLICY', 'INVALID_REQUEST_ID', 'A request ID is required.');
     }
-    return this.#withLease(clientId, leaseToken, 'network_request_detail', async lease => {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'network_request_detail', async lease => {
       const result = await this.engine.networkRequestDetail(lease.sessionId, requestId);
       return redactNetworkResult(result);
     });
   }
 
-  async waitForCondition({ clientId, leaseToken, text, textGone, url, loadState, fn, selector, timeoutMs }) {
-    return this.#withLease(clientId, leaseToken, 'wait_for_condition', lease => this.engine.waitForCondition(lease.sessionId, { text, textGone, url, loadState, fn, selector, timeoutMs }));
+  async waitForCondition({ clientId, leaseToken, sessionRef, text, textGone, url, loadState, fn, selector, timeoutMs }) {
+    return this.#withLease(clientId, leaseToken, sessionRef, 'wait_for_condition', lease => this.engine.waitForCondition(lease.sessionId, { text, textGone, url, loadState, fn, selector, timeoutMs }));
   }
 
-  async resize({ clientId, leaseToken, width, height }) {
+  async resize({ clientId, leaseToken, sessionRef, width, height }) {
     if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 7680 || height > 4320) {
       throw new BrokerError('POLICY', 'INVALID_VIEWPORT', 'Viewport dimensions must be positive integers up to 7680x4320.');
     }
-    return this.#withLease(clientId, leaseToken, 'resize', lease => this.engine.resize(lease.sessionId, width, height));
+    return this.#withLease(clientId, leaseToken, sessionRef, 'resize', lease => this.engine.resize(lease.sessionId, width, height));
   }
 
   async reapStale() {
@@ -474,7 +490,7 @@ async screenshot({ clientId, leaseToken, fullPage = false }) {
       this.telemetry.event('session_reaped', this.#eventContext(lease, { success: true, concurrencyCount: this.activeCount() }));
       reaped = true;
     }
-    if (reaped) void this.#pumpQueue();
+    void this.#pumpQueue();
   }
 
   async shutdown({ preserveRecoverable = false } = {}) {
@@ -506,9 +522,8 @@ async screenshot({ clientId, leaseToken, fullPage = false }) {
     this.telemetry.event('broker_stopped', { concurrencyCount: this.activeCount(), metadata: { preserve_recoverable: preserveRecoverable } });
   }
 
-  async #withLease(clientId, leaseToken, operation, fn, context = {}) {
-    const lease = this.#leaseByToken(leaseToken);
-    if (lease.clientId !== clientId) this.#ownershipViolation(lease, clientId);
+  async #withLease(clientId, leaseToken, sessionRef, operation, fn, context = {}) {
+    const lease = this.#resolveLease(clientId, leaseToken, sessionRef);
     if (lease.status !== 'ACTIVE') {
       throw new BrokerError('LEASE', 'LEASE_NOT_ACTIVE', 'The lease is not active.', { status: lease.status }, 409);
     }
@@ -643,6 +658,31 @@ async screenshot({ clientId, leaseToken, fullPage = false }) {
   #isPersistenceWriter(authProfileId) {
     if (!this.config.authProfiles[authProfileId]?.persistent) return false;
     return ![...this.leases.values()].some(lease => lease.authProfileId === authProfileId && CAPACITY_STATUSES.has(lease.status));
+  }
+
+  #leaseByRef(clientId, sessionRef) {
+    if (typeof sessionRef !== 'string' || !sessionRef) {
+      throw new BrokerError('LEASE', 'INVALID_SESSION_REF', 'Session reference is missing or invalid.', undefined, 400);
+    }
+    const lease = [...this.leases.values()].find(l => l.leaseId === sessionRef);
+    if (!lease) {
+      throw new BrokerError('LEASE', 'INVALID_SESSION_REF', 'Session reference is expired, closed, or unknown.', undefined, 404);
+    }
+    if (lease.clientId !== clientId) {
+      this.#ownershipViolation(lease, clientId);
+    }
+    return lease;
+  }
+
+  #resolveLease(clientId, leaseToken, sessionRef) {
+    if (sessionRef) {
+      return this.#leaseByRef(clientId, sessionRef);
+    }
+    const lease = this.#leaseByToken(leaseToken);
+    if (clientId && lease.clientId !== clientId) {
+      this.#ownershipViolation(lease, clientId);
+    }
+    return lease;
   }
 
   #leaseByToken(token) {
