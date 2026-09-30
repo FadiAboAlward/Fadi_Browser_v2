@@ -153,7 +153,7 @@ async function runFiveBrowserTest(clientId) {
       }
 
       console.log(`  [${s.id}] status...`);
-      const st = await s.client.callTool({ name: 'browser_status', arguments: {} });
+      const st = await s.client.callTool({ name: 'browser_status', arguments: { session_ref: s.sessionRef } });
       if (st.isError) throw new Error(`Session ${s.id} status: ${st.content[0].text}`);
       const data = JSON.parse(st.content[0].text);
       assertInteractive(data, `slot-${s.id}`);
