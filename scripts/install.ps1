@@ -37,7 +37,7 @@ New-ProtectedSecret 'agent-browser-key' 32
 $taskName = 'Fadi Browser V2'
 $powerShell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $startScript = Join-Path $script:RepoRoot 'scripts\start.ps1'
-$action = New-ScheduledTaskAction -Execute $powerShell -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$startScript`""
+$action = New-ScheduledTaskAction -Execute $powerShell -Argument "-NoProfile -WindowStyle Minimized -ExecutionPolicy Bypass -File `"$startScript`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Days 3650) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited

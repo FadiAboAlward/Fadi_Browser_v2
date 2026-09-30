@@ -12,7 +12,7 @@ function Install-Tunnel {
     $targetScript = Join-Path $AppRoot 'start-tunnel.ps1'
     Copy-Item -LiteralPath $templatePath -Destination $targetScript -Force
 
-    $args = "-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$targetScript`" -AppRoot `"$AppRoot`" -ProfileName `"$ProfileName`" -ClientId `"$ClientId`""
+    $args = "-NoLogo -NoProfile -NonInteractive -WindowStyle Minimized -ExecutionPolicy Bypass -File `"$targetScript`" -AppRoot `"$AppRoot`" -ProfileName `"$ProfileName`" -ClientId `"$ClientId`""
     $action = New-ScheduledTaskAction -Execute $powerShell -Argument $args
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Days 3650) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
