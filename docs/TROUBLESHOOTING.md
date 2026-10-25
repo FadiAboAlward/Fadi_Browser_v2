@@ -141,3 +141,20 @@ Use installed normal Chrome with the dedicated persistent V2 profile, let the us
 Do not assume V2 caused it.
 
 Test V1 functionally and inspect process/state separation. During the initial V2 production rollout, V1 Edge remained functional while a separate legacy V1 Chrome worker was unhealthy; that condition was independent and did not block V2.
+
+## Resize acknowledges success but the page stays narrow
+
+For external Chrome, identify exactly one active engine tab and confirm its
+`targetId` belongs to the configured dedicated CDP port. Never select the first
+entry in `/json/list` as a substitute for the owned active tab.
+
+Apply the viewport with the pinned engine's official `set viewport` command in
+that same session. A temporary CDP WebSocket can acknowledge an emulation command
+and then lose the override when it disconnects. Keep the engine's existing CDP
+session responsible for the override instead of creating another connection.
+
+Read `window.innerWidth` and `window.innerHeight` through the same engine session.
+Return `VIEWPORT_MISMATCH` if either differs by more than 10 pixels; an
+acknowledgement alone is insufficient. Local acceptance must check 1440x900 and a
+500-pixel width, read back dimensions in a later tool call, and confirm background
+tabs and a second owned session retain their dimensions and URLs.

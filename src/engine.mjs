@@ -158,41 +158,10 @@ async screenshot(sessionId, options = {}) {
         throw new BrokerError('SESSION', 'VIEWPORT_TARGET_MISMATCH',
           'The active session tab is not available on the dedicated Chrome instance.', undefined, 409);
       }
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const ws = new WebSocket(target.webSocketDebuggerUrl);
-        const finish = error => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          try { ws.close(); } catch {}
-          if (error) reject(error); else resolve();
-        };
-        const timer = setTimeout(() => finish(new Error('CDP viewport command timed out')), 5000);
-        ws.onopen = () => {
-          try {
-            ws.send(JSON.stringify({
-              id: 1, method: 'Emulation.setDeviceMetricsOverride',
-              params: { width, height, deviceScaleFactor: 1, mobile: false }
-            }));
-          } catch (error) { finish(error); }
-        };
-        ws.onmessage = message => {
-          try {
-            const response = JSON.parse(message.data);
-            if (response.id !== 1) return;
-            finish(response.error ? new Error('CDP rejected the viewport command') : null);
-          } catch (error) { finish(error); }
-        };
-        ws.onerror = () => finish(new Error('CDP websocket failed'));
-        ws.onclose = () => finish(new Error('CDP websocket closed before acknowledgement'));
-      }).catch(() => {
-        throw new BrokerError('SESSION', 'VIEWPORT_CDP_FAILED',
-          'Chrome did not acknowledge the viewport command.', undefined, 502);
-      });
-    } else {
-      await this.run(sessionId, ['set', 'viewport', String(width), String(height)]);
     }
+    // Keep emulation on the engine's existing CDP session. Chrome clears a
+    // short-lived CDP client's override when that client disconnects.
+    await this.run(sessionId, ['set', 'viewport', String(width), String(height)]);
 
     // The command acknowledgement is not proof of an effective resize.
     // Verify inside the same agent-browser-bound tab used for later actions.
