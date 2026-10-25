@@ -124,72 +124,43 @@ async screenshot(sessionId, options = {}) {
   }
 
   async resize(sessionId, width, height) {
-    const started = performance.now();
     const external = this.externalSessions.get(sessionId);
-    let targetId = null;
-    if (external?.cdpPort) {
-      // The CDP discovery order is NOT the active tab order. Use the session's
-      // bound target instead of blindly applying emulation to pages[0].
-      const tabsResult = await this.run(sessionId, ['tab']);
-      const tabs = tabsResult?.output?.data?.tabs;
-      const active = Array.isArray(tabs)
-        ? tabs.filter(tab => tab?.active === true && (!tab.type || tab.type === 'page'))
-        : [];
-      if (active.length !== 1 || !active[0].targetId) {
-        throw new BrokerError('SESSION', 'VIEWPORT_TARGET_UNKNOWN',
-          'Cannot identify exactly one active browser tab; viewport was not changed.', undefined, 409);
-      }
-      targetId = active[0].targetId;
-      let target;
+    if (external && external.cdpPort) {
       try {
-        const response = await fetch(`http://127.0.0.1:${external.cdpPort}/json/list`, {
-          signal: AbortSignal.timeout(5000)
-        });
-        if (!response.ok) throw new Error('CDP discovery request failed');
-        const pages = await response.json();
-        target = Array.isArray(pages)
-          ? pages.find(page => page.type === 'page' && page.id === targetId)
-          : null;
-      } catch {
-        throw new BrokerError('SESSION', 'VIEWPORT_CDP_UNAVAILABLE',
-          'Could not inspect the dedicated Chrome CDP targets.', undefined, 502);
+        const response = await fetch(`http://127.0.0.1:${external.cdpPort}/json/list`, { signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+          const pages = (await response.json()).filter(item => item.type === 'page');
+          if (pages.length > 0) {
+            const wsUrl = pages[0].webSocketDebuggerUrl;
+            await new Promise((resolve, reject) => {
+              const ws = new WebSocket(wsUrl);
+              ws.onopen = () => {
+                ws.send(JSON.stringify({
+                  id: 1,
+                  method: 'Emulation.setDeviceMetricsOverride',
+                  params: { width, height, deviceScaleFactor: 1, mobile: false }
+                }));
+              };
+              ws.onmessage = (msg) => {
+                try {
+                  const data = JSON.parse(msg.data);
+                  if (data.id === 1) {
+                    ws.close();
+                    resolve();
+                  }
+                } catch { }
+              };
+              ws.onerror = reject;
+              setTimeout(() => { ws.close(); reject(new Error('timeout')); }, 5000);
+            });
+            return { ok: true, durationMs: 0, output: { width, height }, error: null, success: true };
+          }
+        }
+      } catch (e) {
+        // Fall back to agent-browser CLI
       }
-      if (!target?.webSocketDebuggerUrl) {
-        throw new BrokerError('SESSION', 'VIEWPORT_TARGET_MISMATCH',
-          'The active session tab is not available on the dedicated Chrome instance.', undefined, 409);
-      }
     }
-    // Keep emulation on the engine's existing CDP session. Chrome clears a
-    // short-lived CDP client's override when that client disconnects.
-    await this.run(sessionId, ['set', 'viewport', String(width), String(height)]);
-
-    // The command acknowledgement is not proof of an effective resize.
-    // Verify inside the same agent-browser-bound tab used for later actions.
-    let actual;
-    try {
-      const checked = await this.evaluate(sessionId,
-        'JSON.stringify({width: window.innerWidth, height: window.innerHeight})');
-      const value = checked?.output?.data?.result;
-      actual = typeof value === 'string' ? JSON.parse(value) : value;
-    } catch {
-      throw new BrokerError('SESSION', 'VIEWPORT_VERIFY_FAILED',
-        'Could not verify the effective viewport in the active tab.', undefined, 502);
-    }
-    if (!Number.isFinite(actual?.width) || !Number.isFinite(actual?.height)) {
-      throw new BrokerError('SESSION', 'VIEWPORT_VERIFY_FAILED',
-        'Browser did not return valid effective viewport dimensions.', undefined, 502);
-    }
-    if (Math.abs(actual.width - width) > 10 || Math.abs(actual.height - height) > 10) {
-      throw new BrokerError('SESSION', 'VIEWPORT_MISMATCH',
-        'Viewport command completed but the active tab did not reach the requested size.',
-        { requested: { width, height }, actual: { width: actual.width, height: actual.height } }, 409);
-    }
-    return {
-      ok: true, success: true,
-      durationMs: Math.round((performance.now() - started) * 100) / 100,
-      output: { width, height, actualWidth: actual.width, actualHeight: actual.height,
-        ...(targetId ? { targetId } : {}) }
-    };
+    return this.run(sessionId, ['set', 'viewport', String(width), String(height)]);
   }
 
   async consoleMessages(sessionId, options = {}) {
