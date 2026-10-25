@@ -108,3 +108,91 @@ test('waitForCondition passes correct arguments and timeout', async () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('external resize targets only the active agent-browser tab and checks its real width', async () => {
+  const engine = new AgentBrowserEngine({ projectRoot: '.', namespace: 'test', retentionDays: 1 });
+  engine.externalSessions.set('attached', { cdpPort: 8955 });
+  engine.run = async (_sessionId, args) => {
+    assert.deepEqual(args, ['tab']);
+    return { output: { data: { tabs: [
+      { type: 'page', targetId: 'background-tab', active: false },
+      { type: 'page', targetId: 'correct-tab', active: true }
+    ] } } };
+  };
+  engine.evaluate = async (_sessionId, script) => {
+    assert.match(script, /window.innerWidth/);
+    return { output: { data: { result: JSON.stringify({ width: 1440, height: 900 }) } } };
+  };
+  const oldFetch = globalThis.fetch;
+  const oldWebSocket = globalThis.WebSocket;
+  let selectedUrl = null;
+  let cdpMethod = null;
+  globalThis.fetch = async () => ({ ok: true, json: async () => [
+    { type: 'page', id: 'background-tab', webSocketDebuggerUrl: 'ws://local/background' },
+    { type: 'page', id: 'correct-tab', webSocketDebuggerUrl: 'ws://local/correct' }
+  ] });
+  globalThis.WebSocket = class {
+    constructor(url) { selectedUrl = url; queueMicrotask(() => this.onopen?.()); }
+    send(json) {
+      cdpMethod = JSON.parse(json).method;
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ id: 1, result: {} }) }));
+    }
+    close() {}
+  };
+  try {
+    const result = await engine.resize('attached', 1440, 900);
+    assert.equal(result.ok, true);
+    assert.equal(result.output.targetId, 'correct-tab');
+    assert.equal(result.output.actualWidth, 1440);
+    assert.equal(result.output.actualHeight, 900);
+    assert.equal(selectedUrl, 'ws://local/correct');
+    assert.equal(cdpMethod, 'Emulation.setDeviceMetricsOverride');
+  } finally {
+    globalThis.fetch = oldFetch;
+    globalThis.WebSocket = oldWebSocket;
+  }
+});
+
+test('external resize rejects CDP acknowledgement when the actual viewport stays narrow', async () => {
+  const engine = new AgentBrowserEngine({ projectRoot: '.', namespace: 'test', retentionDays: 1 });
+  engine.externalSessions.set('attached', { cdpPort: 8955 });
+  engine.run = async () => ({ output: { data: { tabs: [
+    { type: 'page', targetId: 'correct-tab', active: true }
+  ] } } });
+  engine.evaluate = async () => ({ output: { data: { result: JSON.stringify({ width: 500, height: 591 }) } } });
+  const oldFetch = globalThis.fetch;
+  const oldWebSocket = globalThis.WebSocket;
+  globalThis.fetch = async () => ({ ok: true, json: async () => [
+    { type: 'page', id: 'correct-tab', webSocketDebuggerUrl: 'ws://local/correct' }
+  ] });
+  globalThis.WebSocket = class {
+    constructor() { queueMicrotask(() => this.onopen?.()); }
+    send() { queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ id: 1, result: {} }) })); }
+    close() {}
+  };
+  try {
+    await assert.rejects(engine.resize('attached', 1440, 900), { code: 'VIEWPORT_MISMATCH' });
+  } finally {
+    globalThis.fetch = oldFetch;
+    globalThis.WebSocket = oldWebSocket;
+  }
+});
+
+test('external resize refuses to guess a target when active tab is unknown', async () => {
+  const engine = new AgentBrowserEngine({ projectRoot: '.', namespace: 'test', retentionDays: 1 });
+  engine.externalSessions.set('attached', { cdpPort: 8955 });
+  engine.run = async () => ({ output: { data: { tabs: [
+    { type: 'page', targetId: 'tab-a' }, { type: 'page', targetId: 'tab-b' }
+  ] } } });
+  await assert.rejects(engine.resize('attached', 1440, 900), { code: 'VIEWPORT_TARGET_UNKNOWN' });
+});
+
+test('ordinary agent-browser resize also verifies effective viewport', async () => {
+  const engine = new AgentBrowserEngine({ projectRoot: '.', namespace: 'test', retentionDays: 1 });
+  engine.run = async (_sessionId, args) => {
+    assert.deepEqual(args, ['set', 'viewport', '1440', '900']);
+    return { ok: true };
+  };
+  engine.evaluate = async () => ({ output: { data: { result: '{"width":500,"height":591}' } } });
+  await assert.rejects(engine.resize('ordinary', 1440, 900), { code: 'VIEWPORT_MISMATCH' });
+});
